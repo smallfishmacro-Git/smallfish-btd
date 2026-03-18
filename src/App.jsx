@@ -92,6 +92,114 @@ function TimeframeBar({ value, onChange, count, style: outerStyle }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// TerminalChart — dual-panel SVG (SPX top, indicator bottom)
+// ═══════════════════════════════════════════════════════════════
+function TerminalChart({
+  dates, topValues, bottomValues, topLabel, bottomLabel,
+  signals = [], threshold,
+  topColor = T.bright, bottomColor = T.cyan, height = 340,
+}) {
+  const ref = useRef(null);
+  const [hover, setHover] = useState(null);
+  const [W, setW] = useState(700);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const ro = new ResizeObserver((e) => { const w = e[0].contentRect.width; if (w > 0) setW(w); });
+    ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, []);
+
+  const n = dates.length;
+  if (n < 2) return <div style={{ color: T.dim, padding: 16, fontSize: 10 }}>NO DATA</div>;
+
+  const pad = { l: 48, r: 8, t: 4, mid: 16, b: 16 };
+  const topH = Math.floor((height - pad.t - pad.mid - pad.b) * 0.55);
+  const botH = Math.floor((height - pad.t - pad.mid - pad.b) * 0.45);
+  const xScale = (i) => pad.l + (i / (n - 1)) * (W - pad.l - pad.r);
+
+  const minMax = (arr) => {
+    const v = arr.filter((x) => x != null && isFinite(x));
+    if (!v.length) return [0, 1];
+    const mn = Math.min(...v), mx = Math.max(...v);
+    const m = (mx - mn) * 0.04 || 1;
+    return [mn - m, mx + m];
+  };
+  const [tMin, tMax] = minMax(topValues);
+  const [bMin, bMax] = minMax(bottomValues);
+  const yTop = (v) => v == null ? null : pad.t + topH - ((v - tMin) / (tMax - tMin)) * topH;
+  const yBot = (v) => v == null ? null : pad.t + topH + pad.mid + botH - ((v - bMin) / (bMax - bMin)) * botH;
+
+  const buildPath = (vals, yFn) => {
+    let p = "";
+    for (let i = 0; i < n; i++) { const y = yFn(vals[i]); if (y == null) continue; p += (p ? "L" : "M") + `${xScale(i).toFixed(1)},${y.toFixed(1)}`; }
+    return p;
+  };
+
+  const topPath = buildPath(topValues, yTop);
+  const botPath = buildPath(bottomValues, yBot);
+  const threshY = threshold != null ? yBot(threshold) : null;
+
+  const sigSet = new Set(signals);
+  const sigPts = [];
+  for (let i = 0; i < n; i++) if (sigSet.has(dates[i])) { const y = yTop(topValues[i]); if (y != null) sigPts.push({ x: xScale(i), y }); }
+
+  const fmtV = (v) => Math.abs(v) >= 1000 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2);
+  const topTicks = [tMin, (tMin + tMax) / 2, tMax].map((v) => ({ y: yTop(v), label: fmtV(v) }));
+  const botTicks = [bMin, (bMin + bMax) / 2, bMax].map((v) => ({ y: yBot(v), label: fmtV(v) }));
+
+  const dateLbls = [];
+  const step = Math.max(1, Math.floor(n / 7));
+  for (let i = 0; i < n; i += step) {
+    dateLbls.push({ x: xScale(i), label: new Date(dates[i]).toLocaleDateString("en-US", { year: "2-digit", month: "short" }) });
+  }
+
+  const handleMouse = (e) => {
+    const r = ref.current?.getBoundingClientRect(); if (!r) return;
+    const idx = Math.round(((e.clientX - r.left - pad.l) / (W - pad.l - pad.r)) * (n - 1));
+    if (idx >= 0 && idx < n) setHover(idx);
+  };
+  const hx = hover != null ? xScale(hover) : null;
+
+  return (
+    <div ref={ref} style={{ position: "relative", width: "100%" }}
+      onMouseMove={handleMouse} onMouseLeave={() => setHover(null)}>
+      <svg width={W} height={height} style={{ display: "block" }}>
+        {topTicks.map((l, i) => <line key={`tg${i}`} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.035)" />)}
+        {botTicks.map((l, i) => <line key={`bg${i}`} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.035)" />)}
+        <line x1={pad.l} x2={W - pad.r} y1={pad.t + topH + pad.mid / 2} y2={pad.t + topH + pad.mid / 2} stroke={T.border} strokeWidth={0.5} />
+        <path d={topPath} fill="none" stroke={topColor} strokeWidth={1} />
+        <path d={botPath} fill="none" stroke={bottomColor} strokeWidth={1} />
+        {threshY != null && <line x1={pad.l} x2={W - pad.r} y1={threshY} y2={threshY} stroke={T.red} strokeWidth={0.6} strokeDasharray="3,3" opacity={0.5} />}
+        {sigPts.map((p, i) => <polygon key={i} points={`${p.x},${p.y - 5} ${p.x - 3.5},${p.y + 1.5} ${p.x + 3.5},${p.y + 1.5}`} fill={T.green} opacity={0.85} />)}
+        {topTicks.map((l, i) => <text key={`tl${i}`} x={pad.l - 4} y={l.y + 3} fill={T.dim} fontSize={8} textAnchor="end" fontFamily={T.font}>{l.label}</text>)}
+        {botTicks.map((l, i) => <text key={`bl${i}`} x={pad.l - 4} y={l.y + 3} fill={T.dim} fontSize={8} textAnchor="end" fontFamily={T.font}>{l.label}</text>)}
+        <text x={pad.l + 4} y={pad.t + 12} fill={T.dim} fontSize={8} fontFamily={T.font} letterSpacing={0.5}>{topLabel}</text>
+        <text x={pad.l + 4} y={pad.t + topH + pad.mid + 12} fill={bottomColor} fontSize={8} fontFamily={T.font} letterSpacing={0.5}>{bottomLabel}</text>
+        {dateLbls.map((l, i) => <text key={i} x={l.x} y={height - 2} fill={T.dim} fontSize={8} textAnchor="middle" fontFamily={T.font}>{l.label}</text>)}
+        {hover != null && <>
+          <line x1={hx} x2={hx} y1={pad.t} y2={height - pad.b} stroke="rgba(255,255,255,0.15)" strokeWidth={0.5} />
+          {yTop(topValues[hover]) != null && <circle cx={hx} cy={yTop(topValues[hover])} r={2.5} fill={topColor} stroke={T.bg} strokeWidth={1} />}
+          {yBot(bottomValues[hover]) != null && <circle cx={hx} cy={yBot(bottomValues[hover])} r={2.5} fill={bottomColor} stroke={T.bg} strokeWidth={1} />}
+        </>}
+      </svg>
+      {hover != null && (
+        <div style={{
+          position: "absolute", left: Math.min(hx + 10, W - 170), top: pad.t,
+          background: "rgba(10,10,12,0.94)", border: `1px solid ${T.borderBright}`,
+          padding: "5px 8px", pointerEvents: "none", zIndex: 10,
+          fontFamily: T.font, fontSize: 9, lineHeight: 1.5,
+        }}>
+          <div style={{ color: T.dim }}>{dates[hover]}</div>
+          <div style={{ color: topColor }}>{topLabel}: {topValues[hover]?.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+          <div style={{ color: bottomColor }}>{bottomLabel}: {bottomValues[hover]?.toFixed(3)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // CompositeChart
 // ═══════════════════════════════════════════════════════════════
 function CompositeChart({ dates, spx, scores, triggers, height = 420 }) {
@@ -101,10 +209,7 @@ function CompositeChart({ dates, spx, scores, triggers, height = 420 }) {
 
   useEffect(() => {
     if (!ref.current) return;
-    const ro = new ResizeObserver((e) => {
-      const w = e[0].contentRect.width;
-      if (w > 0) setW(w);
-    });
+    const ro = new ResizeObserver((e) => { const w = e[0].contentRect.width; if (w > 0) setW(w); });
     ro.observe(ref.current);
     return () => ro.disconnect();
   }, []);
@@ -123,34 +228,20 @@ function CompositeChart({ dates, spx, scores, triggers, height = 420 }) {
   const barH = (s) => (s / 9) * H;
 
   let path = "";
-  for (let i = 0; i < n; i++) {
-    const y = ySpx(spx[i]);
-    if (y == null) continue;
-    path += (path ? "L" : "M") + `${xS(i).toFixed(1)},${y.toFixed(1)}`;
-  }
+  for (let i = 0; i < n; i++) { const y = ySpx(spx[i]); if (y == null) continue; path += (path ? "L" : "M") + `${xS(i).toFixed(1)},${y.toFixed(1)}`; }
 
   const trigSet = new Set(triggers);
   const trigPts = [];
-  for (let i = 0; i < n; i++) {
-    if (trigSet.has(dates[i])) {
-      const y = ySpx(spx[i]);
-      if (y != null) trigPts.push({ x: xS(i), y });
-    }
-  }
+  for (let i = 0; i < n; i++) if (trigSet.has(dates[i])) { const y = ySpx(spx[i]); if (y != null) trigPts.push({ x: xS(i), y }); }
 
   const bw = Math.max(1, (W - pad.l - pad.r) / n * 0.8);
   const spxLbls = [logMin, (logMin + logMax) / 2, logMax].map((lv) => ({
-    y: pad.t + H - ((lv - logMin) / (logMax - logMin)) * H,
-    label: Math.exp(lv).toFixed(0),
+    y: pad.t + H - ((lv - logMin) / (logMax - logMin)) * H, label: Math.exp(lv).toFixed(0),
   }));
-  const scLbls = [0, 3, 6, 9].map((s) => ({
-    y: pad.t + H - barH(s),
-    label: s.toString(),
-  }));
+  const scLbls = [0, 3, 6, 9].map((s) => ({ y: pad.t + H - barH(s), label: s.toString() }));
 
   const handleMouse = (e) => {
-    const r = ref.current?.getBoundingClientRect();
-    if (!r) return;
+    const r = ref.current?.getBoundingClientRect(); if (!r) return;
     const idx = Math.round(((e.clientX - r.left - pad.l) / (W - pad.l - pad.r)) * (n - 1));
     if (idx >= 0 && idx < n) setHover(idx);
   };
@@ -160,56 +251,18 @@ function CompositeChart({ dates, spx, scores, triggers, height = 420 }) {
     <div ref={ref} style={{ position: "relative", width: "100%" }}
       onMouseMove={handleMouse} onMouseLeave={() => setHover(null)}>
       <svg width={W} height={height} style={{ display: "block" }}>
-        {spxLbls.map((l, i) => (
-          <line key={i} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.03)" />
-        ))}
-        {[3, 6].map((s) => (
-          <line key={s} x1={pad.l} x2={W - pad.r}
-            y1={pad.t + H - barH(s)} y2={pad.t + H - barH(s)}
-            stroke="rgba(0,255,136,0.1)" strokeDasharray="2,4" />
-        ))}
-        {scores.map((s, i) => s > 0 && (
-          <rect key={i} x={xS(i) - bw / 2} y={pad.t + H - barH(s)}
-            width={bw} height={barH(s)}
-            fill={`rgba(0,255,136,${0.05 + s * 0.02})`} />
-        ))}
+        {spxLbls.map((l, i) => <line key={i} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.03)" />)}
+        {[3, 6].map((s) => <line key={s} x1={pad.l} x2={W - pad.r} y1={pad.t + H - barH(s)} y2={pad.t + H - barH(s)} stroke="rgba(0,255,136,0.1)" strokeDasharray="2,4" />)}
+        {scores.map((s, i) => s > 0 && <rect key={i} x={xS(i) - bw / 2} y={pad.t + H - barH(s)} width={bw} height={barH(s)} fill={`rgba(0,255,136,${0.05 + s * 0.02})`} />)}
         <path d={path} fill="none" stroke={T.bright} strokeWidth={1} />
-        {trigPts.map((p, i) => (
-          <polygon key={i}
-            points={`${p.x},${p.y - 5} ${p.x - 3.5},${p.y + 1.5} ${p.x + 3.5},${p.y + 1.5}`}
-            fill={T.green} opacity={0.85} />
-        ))}
-        {spxLbls.map((l, i) => (
-          <text key={i} x={pad.l - 4} y={l.y + 3} fill={T.dim} fontSize={8}
-            textAnchor="end" fontFamily={T.font}>{l.label}</text>
-        ))}
-        {scLbls.map((l, i) => (
-          <text key={i} x={W - pad.r + 4} y={l.y + 3} fill={T.green} fontSize={8}
-            textAnchor="start" fontFamily={T.font} opacity={0.5}>{l.label}</text>
-        ))}
-        {(() => {
-          const ls = [];
-          const st = Math.max(1, Math.floor(n / 6));
-          for (let i = 0; i < n; i += st) {
-            ls.push(
-              <text key={i} x={xS(i)} y={height - 2} fill={T.dim} fontSize={8}
-                textAnchor="middle" fontFamily={T.font}>
-                {new Date(dates[i]).toLocaleDateString("en-US", { year: "2-digit", month: "short" })}
-              </text>
-            );
-          }
-          return ls;
-        })()}
-        {hover != null && (
-          <>
-            <line x1={hx} x2={hx} y1={pad.t} y2={pad.t + H}
-              stroke="rgba(255,255,255,0.15)" strokeWidth={0.5} />
-            {ySpx(spx[hover]) != null && (
-              <circle cx={hx} cy={ySpx(spx[hover])} r={2.5}
-                fill={T.bright} stroke={T.bg} strokeWidth={1} />
-            )}
-          </>
-        )}
+        {trigPts.map((p, i) => <polygon key={i} points={`${p.x},${p.y - 5} ${p.x - 3.5},${p.y + 1.5} ${p.x + 3.5},${p.y + 1.5}`} fill={T.green} opacity={0.85} />)}
+        {spxLbls.map((l, i) => <text key={i} x={pad.l - 4} y={l.y + 3} fill={T.dim} fontSize={8} textAnchor="end" fontFamily={T.font}>{l.label}</text>)}
+        {scLbls.map((l, i) => <text key={i} x={W - pad.r + 4} y={l.y + 3} fill={T.green} fontSize={8} textAnchor="start" fontFamily={T.font} opacity={0.5}>{l.label}</text>)}
+        {(() => { const ls = []; const st = Math.max(1, Math.floor(n / 6)); for (let i = 0; i < n; i += st) ls.push(<text key={i} x={xS(i)} y={height - 2} fill={T.dim} fontSize={8} textAnchor="middle" fontFamily={T.font}>{new Date(dates[i]).toLocaleDateString("en-US", { year: "2-digit", month: "short" })}</text>); return ls; })()}
+        {hover != null && <>
+          <line x1={hx} x2={hx} y1={pad.t} y2={pad.t + H} stroke="rgba(255,255,255,0.15)" strokeWidth={0.5} />
+          {ySpx(spx[hover]) != null && <circle cx={hx} cy={ySpx(spx[hover])} r={2.5} fill={T.bright} stroke={T.bg} strokeWidth={1} />}
+        </>}
       </svg>
       {hover != null && (
         <div style={{
@@ -219,9 +272,7 @@ function CompositeChart({ dates, spx, scores, triggers, height = 420 }) {
           fontFamily: T.font, fontSize: 9, lineHeight: 1.5,
         }}>
           <div style={{ color: T.dim }}>{dates[hover]}</div>
-          <div style={{ color: T.bright }}>
-            SPX: {spx[hover]?.toLocaleString(undefined, { maximumFractionDigits: 1 })}
-          </div>
+          <div style={{ color: T.bright }}>SPX: {spx[hover]?.toLocaleString(undefined, { maximumFractionDigits: 1 })}</div>
           <div style={{ color: T.green }}>SIGNALS: {scores[hover]} / 9</div>
         </div>
       )}
@@ -257,6 +308,76 @@ const IND_NUMS = {
   r3fd: "1", acwi: "2", mcclellan: "3", putcall: "4", feargreed: "5",
   lowry: "6", zweig: "7", volcurve: "8", highs52w: "9",
 };
+const IND_COLORS = {
+  r3fd: T.orange, acwi: T.cyan, mcclellan: T.orange,
+  putcall: T.purple, feargreed: T.amber, lowry: T.red,
+  zweig: T.cyan, volcurve: T.orange, highs52w: T.cyan,
+};
+
+// ═══════════════════════════════════════════════════════════════
+// IndicatorRow — expandable with chart
+// ═══════════════════════════════════════════════════════════════
+function IndicatorRow({ id, indicator, isActive }) {
+  const [expanded, setExpanded] = useState(false);
+  const [tf, setTf] = useState("2Y");
+  const color = IND_COLORS[id] || T.cyan;
+
+  const { dates: slD, arrays: [slSpx, slVal] } = useMemo(
+    () => sliceByTf(indicator.dates, [indicator.spx, indicator.values], tf),
+    [indicator, tf]
+  );
+
+  return (
+    <div style={{
+      background: expanded ? T.bgCard : "transparent",
+      borderBottom: `1px solid ${T.border}`,
+      transition: "background 0.15s",
+    }}>
+      {/* Header row */}
+      <div onClick={() => setExpanded(!expanded)} style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "8px 8px 8px 0", cursor: "pointer",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{
+            width: 16, height: 16, borderRadius: 2,
+            background: T.dim, color: T.bright,
+            fontSize: 9, fontWeight: 700, fontFamily: T.font,
+            display: "inline-flex", alignItems: "center", justifyContent: "center",
+          }}>{IND_NUMS[id]}</span>
+          <span style={{
+            fontSize: 10, color: expanded ? T.bright : T.text, fontWeight: 500,
+            letterSpacing: 0.2,
+          }}>{indicator.name}</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <SignalBadge active={isActive} />
+          <span style={{ color: T.dim, fontSize: 10 }}>{expanded ? "▾" : "▸"}</span>
+        </div>
+      </div>
+
+      {/* Expanded chart */}
+      {expanded && (
+        <div style={{ padding: "4px 8px 10px" }}>
+          <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 4 }}>
+            <TimeframeBar value={tf} onChange={setTf} count={slD.length} />
+          </div>
+          <TerminalChart
+            dates={slD}
+            topValues={slSpx}
+            bottomValues={slVal}
+            topLabel="S&P 500"
+            bottomLabel={indicator.name}
+            signals={indicator.signals}
+            threshold={indicator.threshold}
+            bottomColor={color}
+            height={340}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ═══════════════════════════════════════════════════════════════
 // TitleBar + NavBar
@@ -437,7 +558,7 @@ export default function App() {
 
         {/* Split Layout */}
         <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-          {/* LEFT */}
+          {/* LEFT: Composite */}
           <div style={{ flex: 1, minWidth: 0, maxWidth: "50%" }}>
             <div style={{
               display: "flex", justifyContent: "space-between", alignItems: "center",
@@ -466,38 +587,23 @@ export default function App() {
             </div>
           </div>
 
-          {/* RIGHT */}
+          {/* RIGHT: Indicators */}
           <div style={{ flex: 1, minWidth: 0, maxWidth: "50%", borderLeft: `1px solid ${T.border}`, paddingLeft: 8 }}>
             <div style={{
               fontSize: 11, fontWeight: 700, color: T.amber, letterSpacing: 0.8,
               padding: "0 0 6px", borderBottom: `1px solid ${T.border}`,
             }}>
               INDICATORS
+              <span style={{ fontWeight: 400, color: T.dim, fontSize: 9, marginLeft: 10, letterSpacing: 0.3 }}>
+                Click to expand chart
+              </span>
             </div>
 
             {data?.indicators && IND_ORDER.map((id) => {
               const ind = data.indicators[id];
               if (!ind) return null;
-              const active = isSignalActive(ind);
               return (
-                <div key={id} style={{
-                  display: "flex", alignItems: "center", justifyContent: "space-between",
-                  padding: "8px 8px 8px 0", borderBottom: `1px solid ${T.border}`,
-                }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{
-                      width: 16, height: 16, borderRadius: 2,
-                      background: T.dim, color: T.bright,
-                      fontSize: 9, fontWeight: 700, fontFamily: T.font,
-                      display: "inline-flex", alignItems: "center", justifyContent: "center",
-                    }}>{IND_NUMS[id]}</span>
-                    <span style={{
-                      fontSize: 10, color: T.bright, fontWeight: 500,
-                      letterSpacing: 0.2,
-                    }}>{ind.name}</span>
-                  </div>
-                  <SignalBadge active={active} />
-                </div>
+                <IndicatorRow key={id} id={id} indicator={ind} isActive={isSignalActive(ind)} />
               );
             })}
 

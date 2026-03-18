@@ -1,2 +1,1 @@
-# No external dependencies — using Python stdlib only
-# (csv, json, urllib, ssl, math, datetime, concurrent.futures)
+

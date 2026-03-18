@@ -387,7 +387,7 @@ def compute_metrics(composite, indicators):
 
 
 # ── Downsample for JSON size ─────────────────────────────────────────────────
-def downsample(dates, values_dict, max_points=2500):
+def downsample(dates, values_dict, max_points=8000):
     """Downsample aligned series to keep JSON response manageable."""
     n = len(dates)
     if n <= max_points:
@@ -428,7 +428,7 @@ class handler(BaseHTTPRequestHandler):
                 ind["dates"], sampled = downsample(
                     ind["dates"],
                     {"spx": ind["spx"], "values": ind["values"]},
-                    max_points=2500
+                    max_points=8000
                 )
                 ind["spx"] = sampled["spx"]
                 ind["values"] = sampled["values"]
@@ -444,7 +444,7 @@ class handler(BaseHTTPRequestHandler):
                 composite["dates"],
                 {"scores": composite["scores"], "ma2": composite["ma2"],
                  "spx": composite["spx"]},
-                max_points=2500
+                max_points=8000
             )
             composite["scores"] = comp_sampled["scores"]
             composite["ma2"] = comp_sampled["ma2"]

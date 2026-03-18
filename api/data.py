@@ -188,9 +188,11 @@ def compute_indicators(raw):
                                         nshd["dates"], nshd["values"])
     rana = [(adv_v[i] - dec_v[i]) / max(adv_v[i] + dec_v[i], 1) * 1000
             for i in range(len(adv_v))]
+    rana = [max(-1000, min(1000, v)) for v in rana]
     ema19 = ewma(rana, 19)
     ema39 = ewma(rana, 39)
     mco = [ema19[i] - ema39[i] for i in range(len(rana))]
+    mco = [max(-500, min(500, v)) for v in mco]
     d, spx_a, mco_a = align_series(spx_d, spx_v, d_raw, mco)
     signals = [d[i] for i in range(1, len(mco_a))
                if mco_a[i] < -80 and mco_a[i - 1] >= -80]
@@ -272,7 +274,9 @@ def compute_indicators(raw):
     d_zw, adv_zw, dec_zw = align_series(nshu["dates"], nshu["values"],
                                           nshd["dates"], nshd["values"])
     ratio = [adv_zw[i] / max(adv_zw[i] + dec_zw[i], 1) for i in range(len(adv_zw))]
+    ratio = [max(0, min(1, v)) for v in ratio]
     zweig = ewma(ratio, 10)
+    zweig = [max(0, min(1, v)) for v in zweig]
     d, spx_a, zw_a = align_series(spx_d, spx_v, d_zw, zweig)
     signals = [d[i] for i in range(1, len(zw_a))
                if zw_a[i] <= 0.35 and zw_a[i - 1] > 0.35]

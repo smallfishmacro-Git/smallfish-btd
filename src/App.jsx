@@ -475,17 +475,430 @@ function isSignalActive(ind) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// BacktestPlaceholder
+// ButtonStrip — reusable control strip (Cross-Asset style)
 // ═══════════════════════════════════════════════════════════════
-function BacktestPlaceholder() {
+function ButtonStrip({ label, options, value, onChange }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
+      <span style={{ color: T.dim, fontSize: 9, fontFamily: T.font, letterSpacing: 0.5, marginRight: 6 }}>{label}:</span>
+      {options.map((o) => {
+        const val = typeof o === "object" ? o.value : o;
+        const lbl = typeof o === "object" ? o.label : o;
+        const isActive = value === val;
+        return (
+          <button key={val} onClick={() => onChange(val)} style={{
+            padding: "3px 8px", fontSize: 9, fontWeight: isActive ? 700 : 400,
+            fontFamily: T.font, cursor: "pointer", letterSpacing: 0.3, borderRadius: 0,
+            background: isActive ? T.orange : "transparent",
+            color: isActive ? "#000" : T.dim,
+            border: `1px solid ${isActive ? T.orange : T.border}`,
+            marginLeft: -1,
+          }}>{lbl}</button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Backtest computation
+// ═══════════════════════════════════════════════════════════════
+const HORIZONS = [
+  { key: "1W", days: 5 },
+  { key: "1M", days: 21 },
+  { key: "3M", days: 63 },
+  { key: "6M", days: 126 },
+  { key: "1Y", days: 252 },
+];
+
+function computeBacktest(composite, minScore, holdDays, dateRange) {
+  if (!composite?.dates?.length) return null;
+
+  const { dates, scores, spx } = composite;
+  const n = dates.length;
+
+  // Date range filter
+  const cutoff = tfCutoff(dateRange);
+  const cutStr = cutoff ? cutoff.toISOString().split("T")[0] : null;
+  const startIdx = cutStr ? dates.findIndex((d) => d >= cutStr) : 0;
+  const si = Math.max(0, startIdx);
+
+  // Find triggers where score >= minScore with 5-day cooldown
+  const triggers = [];
+  let lastTrigIdx = -Infinity;
+  for (let i = si; i < n; i++) {
+    if (scores[i] >= minScore && spx[i] > 0) {
+      if (i - lastTrigIdx > 5) {
+        triggers.push(i);
+        lastTrigIdx = i;
+      }
+    }
+  }
+
+  // Forward returns for each trigger at all horizons
+  const trades = triggers.map((idx) => {
+    const entry = spx[idx];
+    const fwd = {};
+    for (const h of HORIZONS) {
+      const exitIdx = idx + h.days;
+      if (exitIdx < n && spx[exitIdx] > 0) {
+        fwd[h.key] = (spx[exitIdx] - entry) / entry;
+      } else {
+        fwd[h.key] = null;
+      }
+    }
+    return { idx, date: dates[idx], entry, score: scores[idx], fwd };
+  });
+
+  // Equity curve: compound returns for selected holding period
+  let equity = 100;
+  let holdUntil = -1;
+  const eqDates = [];
+  const eqStrategy = [];
+  const eqBuyHold = [];
+  const firstSpx = si < n ? spx[si] : 1;
+  const trigSet = new Set(triggers);
+
+  for (let i = si; i < n; i++) {
+    if (spx[i] <= 0) continue;
+    eqDates.push(dates[i]);
+    eqBuyHold.push(100 * spx[i] / firstSpx);
+
+    if (trigSet.has(i) && i >= holdUntil) {
+      const exitIdx = Math.min(i + holdDays, n - 1);
+      if (spx[exitIdx] > 0) {
+        const ret = (spx[exitIdx] - spx[i]) / spx[i];
+        equity *= (1 + ret);
+      }
+      holdUntil = i + holdDays;
+    }
+    eqStrategy.push(equity);
+  }
+
+  // Summary stats for selected hold period
+  const holdKey = HORIZONS.find((h) => h.days === holdDays)?.key || "1M";
+  const returns = trades.map((t) => t.fwd[holdKey]).filter((r) => r != null);
+  const wins = returns.filter((r) => r > 0).length;
+  const avgReturn = returns.length ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
+  const bestTrade = returns.length ? Math.max(...returns) : 0;
+  const worstTrade = returns.length ? Math.min(...returns) : 0;
+
+  // Max drawdown of strategy equity curve
+  let peak = 0, maxDD = 0;
+  for (const v of eqStrategy) {
+    if (v > peak) peak = v;
+    const dd = (peak - v) / peak;
+    if (dd > maxDD) maxDD = dd;
+  }
+
+  // Forward return stats per horizon
+  const horizonStats = HORIZONS.map((h) => {
+    const rets = trades.map((t) => t.fwd[h.key]).filter((r) => r != null);
+    const avg = rets.length ? rets.reduce((a, b) => a + b, 0) / rets.length : 0;
+    const w = rets.length ? rets.filter((r) => r > 0).length / rets.length : 0;
+    return { key: h.key, avg, winRate: w, count: rets.length };
+  });
+
+  return {
+    trades,
+    equity: { dates: eqDates, strategy: eqStrategy, buyHold: eqBuyHold },
+    stats: {
+      numTrades: trades.length,
+      avgReturn,
+      winRate: returns.length ? wins / returns.length : 0,
+      bestTrade,
+      worstTrade,
+      maxDrawdown: maxDD,
+      holdKey,
+    },
+    horizonStats,
+    triggerIndices: triggers,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EquityCurveChart — dual line (strategy vs buy-and-hold)
+// ═══════════════════════════════════════════════════════════════
+function EquityCurveChart({ dates, strategy, buyHold, triggerDates, height = 420 }) {
+  const ref = useRef(null);
+  const [hover, setHover] = useState(null);
+  const [W, setW] = useState(600);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const ro = new ResizeObserver((e) => { const w = e[0].contentRect.width; if (w > 0) setW(w); });
+    ro.observe(ref.current);
+    return () => ro.disconnect();
+  }, []);
+
+  const n = dates.length;
+  if (n < 2) return null;
+
+  const pad = { l: 52, r: 8, t: 12, b: 20 };
+  const H = height - pad.t - pad.b;
+  const xS = (i) => pad.l + (i / (n - 1)) * (W - pad.l - pad.r);
+
+  const allVals = [...strategy, ...buyHold].filter((v) => v != null && isFinite(v));
+  const mn = Math.min(...allVals) * 0.98;
+  const mx = Math.max(...allVals) * 1.02;
+  const yS = (v) => (v == null || !isFinite(v)) ? null : pad.t + H - ((v - mn) / (mx - mn)) * H;
+
+  const buildPath = (vals) => {
+    let p = "";
+    for (let i = 0; i < n; i++) { const y = yS(vals[i]); if (y == null) continue; p += (p ? "L" : "M") + `${xS(i).toFixed(1)},${y.toFixed(1)}`; }
+    return p;
+  };
+
+  const stratPath = buildPath(strategy);
+  const bhPath = buildPath(buyHold);
+
+  // Trigger markers
+  const trigSet = new Set(triggerDates || []);
+  const trigPts = [];
+  for (let i = 0; i < n; i++) {
+    if (trigSet.has(dates[i])) {
+      const y = yS(strategy[i]);
+      if (y != null) trigPts.push({ x: xS(i), y });
+    }
+  }
+
+  // Y-axis labels
+  const ticks = [mn, (mn + mx) / 2, mx].map((v) => ({ y: yS(v), label: v.toFixed(0) }));
+
+  // Date labels
+  const dateLbls = [];
+  const step = Math.max(1, Math.floor(n / 6));
+  for (let i = 0; i < n; i += step) {
+    dateLbls.push({ x: xS(i), label: new Date(dates[i]).toLocaleDateString("en-US", { year: "2-digit", month: "short" }) });
+  }
+
+  const handleMouse = (e) => {
+    const r = ref.current?.getBoundingClientRect(); if (!r) return;
+    const idx = Math.round(((e.clientX - r.left - pad.l) / (W - pad.l - pad.r)) * (n - 1));
+    if (idx >= 0 && idx < n) setHover(idx);
+  };
+  const hx = hover != null ? xS(hover) : null;
+
+  // Strategy return
+  const stratReturn = strategy.length >= 2 ? (strategy[strategy.length - 1] / strategy[0] - 1) * 100 : 0;
+  const bhReturn = buyHold.length >= 2 ? (buyHold[buyHold.length - 1] / buyHold[0] - 1) * 100 : 0;
+
+  return (
+    <div ref={ref} style={{ position: "relative", width: "100%" }}
+      onMouseMove={handleMouse} onMouseLeave={() => setHover(null)}>
+      {/* Legend */}
+      <div style={{ padding: "0 8px 2px", display: "flex", gap: 16, fontSize: 9, color: T.dim }}>
+        <span>— <span style={{ color: T.green }}>STRATEGY</span> {stratReturn >= 0 ? "+" : ""}{stratReturn.toFixed(1)}%</span>
+        <span>— <span style={{ color: T.dim }}>BUY & HOLD</span> {bhReturn >= 0 ? "+" : ""}{bhReturn.toFixed(1)}%</span>
+      </div>
+      <svg width={W} height={height} style={{ display: "block" }}>
+        {/* Grid */}
+        {ticks.map((l, i) => <line key={i} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.03)" />)}
+        {/* 100 baseline */}
+        {yS(100) != null && <line x1={pad.l} x2={W - pad.r} y1={yS(100)} y2={yS(100)} stroke="rgba(255,255,255,0.08)" strokeDasharray="3,4" />}
+        {/* Lines */}
+        <path d={bhPath} fill="none" stroke={T.dim} strokeWidth={1} opacity={0.5} />
+        <path d={stratPath} fill="none" stroke={T.green} strokeWidth={1.2} />
+        {/* Triggers */}
+        {trigPts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={2} fill={T.orange} opacity={0.7} />)}
+        {/* Y labels */}
+        {ticks.map((l, i) => <text key={i} x={pad.l - 4} y={l.y + 3} fill={T.dim} fontSize={8} textAnchor="end" fontFamily={T.font}>{l.label}</text>)}
+        {/* Date labels */}
+        {dateLbls.map((l, i) => <text key={i} x={l.x} y={height - 4} fill={T.dim} fontSize={8} textAnchor="middle" fontFamily={T.font}>{l.label}</text>)}
+        {/* Crosshair */}
+        {hover != null && <>
+          <line x1={hx} x2={hx} y1={pad.t} y2={pad.t + H} stroke="rgba(255,255,255,0.15)" strokeWidth={0.5} />
+          {yS(strategy[hover]) != null && <circle cx={hx} cy={yS(strategy[hover])} r={2.5} fill={T.green} stroke={T.bg} strokeWidth={1} />}
+          {yS(buyHold[hover]) != null && <circle cx={hx} cy={yS(buyHold[hover])} r={2.5} fill={T.dim} stroke={T.bg} strokeWidth={1} />}
+        </>}
+      </svg>
+      {hover != null && (
+        <div style={{
+          position: "absolute", left: Math.min(hx + 10, W - 180), top: pad.t,
+          background: "rgba(10,10,12,0.94)", border: `1px solid ${T.borderBright}`,
+          padding: "5px 8px", pointerEvents: "none", zIndex: 10,
+          fontFamily: T.font, fontSize: 9, lineHeight: 1.5,
+        }}>
+          <div style={{ color: T.dim }}>{dates[hover]}</div>
+          <div style={{ color: T.green }}>Strategy: {strategy[hover]?.toFixed(1)}</div>
+          <div style={{ color: T.text }}>Buy & Hold: {buyHold[hover]?.toFixed(1)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Stat cell
+// ═══════════════════════════════════════════════════════════════
+function StatCell({ label, value, color, sub }) {
   return (
     <div style={{
-      display: "flex", alignItems: "center", justifyContent: "center",
-      minHeight: 400, color: T.dim, fontSize: 11, letterSpacing: 1,
-      border: `1px solid ${T.border}`, background: T.bgPanel,
+      padding: "8px 10px", background: T.bgPanel, border: `1px solid ${T.border}`,
+      flex: "1 1 0",
     }}>
-      BACKTEST MODULE — COMING SOON
+      <div style={{ fontSize: 8, color: T.dim, letterSpacing: 0.8, marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: color || T.bright }}>{value}</div>
+      {sub && <div style={{ fontSize: 8, color: T.dim, marginTop: 2 }}>{sub}</div>}
     </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BacktestView — full backtest module
+// ═══════════════════════════════════════════════════════════════
+function BacktestView({ data }) {
+  const [minScore, setMinScore] = useState(3);
+  const [holdDays, setHoldDays] = useState(21);
+  const [dateRange, setDateRange] = useState("ALL");
+
+  const bt = useMemo(
+    () => computeBacktest(data?.composite, minScore, holdDays, dateRange),
+    [data, minScore, holdDays, dateRange]
+  );
+
+  if (!bt) return null;
+
+  const pct = (v) => v == null ? "—" : `${(v * 100) >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
+  const pctColor = (v) => v == null ? T.dim : v >= 0 ? T.green : T.red;
+
+  return (
+    <>
+      {/* Controls bar */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "6px 0", borderBottom: `1px solid ${T.border}`,
+        flexWrap: "wrap", gap: 8,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <ButtonStrip label="MIN SCORE" options={[2, 3, 4, 5]} value={minScore} onChange={setMinScore} />
+          <ButtonStrip label="HOLD" options={[
+            { value: 5, label: "1W" },
+            { value: 21, label: "1M" },
+            { value: 63, label: "3M" },
+            { value: 126, label: "6M" },
+            { value: 252, label: "1Y" },
+          ]} value={holdDays} onChange={setHoldDays} />
+        </div>
+        <TimeframeBar value={dateRange} onChange={setDateRange} count={bt.trades.length} style={{ fontSize: 9 }} />
+      </div>
+
+      {/* Main layout */}
+      <div style={{ display: "flex", gap: 0, flex: 1, minHeight: 0 }}>
+
+        {/* LEFT: Equity curve + horizon stats */}
+        <div style={{ flex: "1 1 55%", minWidth: 0, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column" }}>
+          <div style={{
+            fontSize: 10, fontWeight: 600, color: T.text, letterSpacing: 0.8,
+            padding: "8px 8px 4px",
+          }}>
+            EQUITY CURVE
+            <span style={{ fontWeight: 400, color: T.dim, fontSize: 9, marginLeft: 8 }}>
+              $100 invested at each signal
+            </span>
+          </div>
+          <div style={{ background: T.bgPanel, flex: 1 }}>
+            <EquityCurveChart
+              dates={bt.equity.dates}
+              strategy={bt.equity.strategy}
+              buyHold={bt.equity.buyHold}
+              triggerDates={bt.trades.map((t) => t.date)}
+              height={380}
+            />
+          </div>
+
+          {/* Horizon return stats bar */}
+          <div style={{ padding: "8px 8px 4px" }}>
+            <div style={{ fontSize: 9, color: T.dim, letterSpacing: 0.8, marginBottom: 4 }}>AVERAGE FORWARD RETURNS</div>
+            <div style={{ display: "flex", gap: 2 }}>
+              {bt.horizonStats.map((h) => (
+                <div key={h.key} style={{
+                  flex: 1, padding: "6px 8px", background: T.bgPanel, border: `1px solid ${T.border}`,
+                  textAlign: "center",
+                }}>
+                  <div style={{ fontSize: 8, color: T.dim, marginBottom: 2 }}>{h.key}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: pctColor(h.avg) }}>{pct(h.avg)}</div>
+                  <div style={{ fontSize: 8, color: T.dim, marginTop: 1 }}>
+                    {(h.winRate * 100).toFixed(0)}% win · {h.count} trades
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* RIGHT: Stats + trade table */}
+        <div style={{ flex: "1 1 45%", minWidth: 0, display: "flex", flexDirection: "column" }}>
+
+          {/* Summary stats */}
+          <div style={{ padding: "8px 8px 4px" }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: T.text, letterSpacing: 0.8, marginBottom: 6 }}>
+              SUMMARY
+              <span style={{ fontWeight: 400, color: T.dim, fontSize: 9, marginLeft: 8 }}>
+                Hold {HORIZONS.find((h) => h.days === holdDays)?.key || "—"}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 2, marginBottom: 2 }}>
+              <StatCell label="TRADES" value={bt.stats.numTrades} />
+              <StatCell label="AVG RETURN" value={pct(bt.stats.avgReturn)} color={pctColor(bt.stats.avgReturn)} />
+              <StatCell label="WIN RATE" value={`${(bt.stats.winRate * 100).toFixed(0)}%`}
+                color={bt.stats.winRate >= 0.5 ? T.green : T.red} />
+            </div>
+            <div style={{ display: "flex", gap: 2 }}>
+              <StatCell label="BEST TRADE" value={pct(bt.stats.bestTrade)} color={T.green} />
+              <StatCell label="WORST TRADE" value={pct(bt.stats.worstTrade)} color={T.red} />
+              <StatCell label="MAX DRAWDOWN" value={`-${(bt.stats.maxDrawdown * 100).toFixed(1)}%`} color={T.red} />
+            </div>
+          </div>
+
+          {/* Trade table */}
+          <div style={{ padding: "8px 8px 0" }}>
+            <div style={{ fontSize: 10, fontWeight: 600, color: T.text, letterSpacing: 0.8, marginBottom: 4 }}>
+              TRADE LOG
+              <span style={{ fontWeight: 400, color: T.dim, fontSize: 9, marginLeft: 8 }}>{bt.trades.length} signals</span>
+            </div>
+          </div>
+          <div style={{ flex: 1, overflow: "auto", padding: "0 8px 8px" }}>
+            <table style={{
+              width: "100%", borderCollapse: "collapse", fontSize: 9, fontFamily: T.font,
+            }}>
+              <thead>
+                <tr style={{ borderBottom: `1px solid ${T.border}` }}>
+                  {["DATE", "SPX", "SC", "1W", "1M", "3M", "6M", "1Y"].map((h) => (
+                    <th key={h} style={{
+                      padding: "5px 4px", textAlign: h === "DATE" ? "left" : "right",
+                      color: T.dim, fontWeight: 600, letterSpacing: 0.5,
+                      position: "sticky", top: 0, background: T.bg, zIndex: 1,
+                    }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {bt.trades.slice().reverse().map((t, i) => (
+                  <tr key={i} style={{ borderBottom: `1px solid ${T.border}` }}>
+                    <td style={{ padding: "4px 4px", color: T.text }}>{t.date}</td>
+                    <td style={{ padding: "4px 4px", textAlign: "right", color: T.bright }}>
+                      {t.entry.toFixed(0)}
+                    </td>
+                    <td style={{ padding: "4px 4px", textAlign: "right", color: T.orange }}>
+                      {t.score}
+                    </td>
+                    {HORIZONS.map((h) => (
+                      <td key={h.key} style={{
+                        padding: "4px 4px", textAlign: "right",
+                        color: pctColor(t.fwd[h.key]),
+                      }}>
+                        {pct(t.fwd[h.key])}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -707,6 +1120,6 @@ export default function App() {
   return shell(
     subTab === "LIVE SIGNAL"
       ? <LiveSignalView data={data} />
-      : <BacktestPlaceholder />
+      : <BacktestView data={data} />
   );
 }

@@ -38,7 +38,7 @@ const T = {
 // ═══════════════════════════════════════════════════════════════
 // Timeframe
 // ═══════════════════════════════════════════════════════════════
-const TF_LIST = ["1M", "3M", "6M", "YTD", "1Y", "2Y", "5Y", "ALL"];
+const TF_LIST = ["1M", "3M", "6M", "YTD", "1Y", "2Y", "5Y", "10Y", "15Y", "20Y", "ALL"];
 
 function tfCutoff(tf) {
   const now = new Date(), y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
@@ -50,6 +50,9 @@ function tfCutoff(tf) {
     case "1Y": return new Date(y - 1, m, d);
     case "2Y": return new Date(y - 2, m, d);
     case "5Y": return new Date(y - 5, m, d);
+    case "10Y": return new Date(y - 10, m, d);
+    case "15Y": return new Date(y - 15, m, d);
+    case "20Y": return new Date(y - 20, m, d);
     default: return null;
   }
 }
@@ -883,12 +886,16 @@ function BacktestView({ data }) {
 
           {/* Summary stats */}
           <div style={{ padding: "8px 8px 4px" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8, marginBottom: 6 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8, marginBottom: 0 }}>
               SUMMARY
               <span style={{ fontWeight: 400, color: T.dim, fontSize: 9, marginLeft: 8 }}>
                 Hold {HORIZONS.find((h) => h.days === holdDays)?.key || "—"}
               </span>
             </div>
+            <InfoBox>
+              <span style={{ color: T.orange, fontWeight: 600 }}>How to read this: </span>
+              Performance metrics for the selected holding period. AVG RETURN = mean return across all triggered trades. WIN RATE = percentage of trades that were profitable. MAX DRAWDOWN = largest peak-to-trough decline of the strategy equity curve.
+            </InfoBox>
             <div style={{ display: "flex", gap: 2, marginBottom: 2 }}>
               <StatCell label="TRADES" value={bt.stats.numTrades} />
               <StatCell label="AVG RETURN" value={pct(bt.stats.avgReturn)} color={pctColor(bt.stats.avgReturn)} />

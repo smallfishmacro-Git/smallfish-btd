@@ -475,6 +475,20 @@ function isSignalActive(ind) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// InfoBox — descriptive box (matches Cross-Asset orange border)
+// ═══════════════════════════════════════════════════════════════
+function InfoBox({ children }) {
+  return (
+    <div style={{
+      padding: "6px 10px", margin: "6px 8px", fontSize: 9, lineHeight: 1.6,
+      fontFamily: T.font, color: T.text,
+      background: "rgba(255,159,67,0.04)",
+      border: `1px solid ${T.orange}33`,
+    }}>{children}</div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // ButtonStrip — reusable control strip (Cross-Asset style)
 // ═══════════════════════════════════════════════════════════════
 function ButtonStrip({ label, options, value, onChange }) {
@@ -591,12 +605,21 @@ function computeBacktest(composite, minScore, holdDays, dateRange) {
     if (dd > maxDD) maxDD = dd;
   }
 
-  // Forward return stats per horizon
+  // Forward return stats per horizon (signal days + all days baseline)
   const horizonStats = HORIZONS.map((h) => {
     const rets = trades.map((t) => t.fwd[h.key]).filter((r) => r != null);
     const avg = rets.length ? rets.reduce((a, b) => a + b, 0) / rets.length : 0;
     const w = rets.length ? rets.filter((r) => r > 0).length / rets.length : 0;
-    return { key: h.key, avg, winRate: w, count: rets.length };
+    // All-days baseline: average forward return from any random day
+    let allDayRets = [];
+    for (let j = si; j < n - h.days; j++) {
+      if (spx[j] > 0 && spx[j + h.days] > 0) {
+        allDayRets.push((spx[j + h.days] - spx[j]) / spx[j]);
+      }
+    }
+    const allDayAvg = allDayRets.length ? allDayRets.reduce((a, b) => a + b, 0) / allDayRets.length : 0;
+    const allDayWin = allDayRets.length ? allDayRets.filter((r) => r > 0).length / allDayRets.length : 0;
+    return { key: h.key, avg, winRate: w, count: rets.length, allDayAvg, allDayWin, allDayCount: allDayRets.length };
   });
 
   return {
@@ -786,79 +809,36 @@ function BacktestView({ data }) {
       {/* Main layout */}
       <div style={{ display: "flex", gap: 0, flex: 1, minHeight: 0 }}>
 
-        {/* LEFT: Equity curve + horizon stats */}
+        {/* LEFT: Equity curve + trade log */}
         <div style={{ flex: "1 1 55%", minWidth: 0, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column" }}>
           <div style={{
-            fontSize: 10, fontWeight: 600, color: T.text, letterSpacing: 0.8,
-            padding: "8px 8px 4px",
+            fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8,
+            padding: "8px 8px 0",
           }}>
             EQUITY CURVE
-            <span style={{ fontWeight: 400, color: T.dim, fontSize: 9, marginLeft: 8 }}>
-              $100 invested at each signal
-            </span>
           </div>
+          <InfoBox>
+            <span style={{ color: T.orange, fontWeight: 600 }}>How to read this: </span>
+            The <span style={{ color: T.green }}>green line</span> shows the cumulative return of buying the S&P 500 at each composite trigger and holding for the selected period. The <span style={{ color: T.dim }}>grey line</span> is a simple buy-and-hold benchmark. <span style={{ color: T.orange }}>●</span> marks each entry point. The strategy captures short-term mean-reversion after broad market stress.
+          </InfoBox>
           <div style={{ background: T.bgPanel, flex: 1 }}>
             <EquityCurveChart
               dates={bt.equity.dates}
               strategy={bt.equity.strategy}
               buyHold={bt.equity.buyHold}
               triggerDates={bt.trades.map((t) => t.date)}
-              height={380}
+              height={360}
             />
-          </div>
-
-          {/* Horizon return stats bar */}
-          <div style={{ padding: "8px 8px 4px" }}>
-            <div style={{ fontSize: 9, color: T.dim, letterSpacing: 0.8, marginBottom: 4 }}>AVERAGE FORWARD RETURNS</div>
-            <div style={{ display: "flex", gap: 2 }}>
-              {bt.horizonStats.map((h) => (
-                <div key={h.key} style={{
-                  flex: 1, padding: "6px 8px", background: T.bgPanel, border: `1px solid ${T.border}`,
-                  textAlign: "center",
-                }}>
-                  <div style={{ fontSize: 8, color: T.dim, marginBottom: 2 }}>{h.key}</div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: pctColor(h.avg) }}>{pct(h.avg)}</div>
-                  <div style={{ fontSize: 8, color: T.dim, marginTop: 1 }}>
-                    {(h.winRate * 100).toFixed(0)}% win · {h.count} trades
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        {/* RIGHT: Stats + trade table */}
-        <div style={{ flex: "1 1 45%", minWidth: 0, display: "flex", flexDirection: "column" }}>
-
-          {/* Summary stats */}
-          <div style={{ padding: "8px 8px 4px" }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: T.text, letterSpacing: 0.8, marginBottom: 6 }}>
-              SUMMARY
-              <span style={{ fontWeight: 400, color: T.dim, fontSize: 9, marginLeft: 8 }}>
-                Hold {HORIZONS.find((h) => h.days === holdDays)?.key || "—"}
-              </span>
-            </div>
-            <div style={{ display: "flex", gap: 2, marginBottom: 2 }}>
-              <StatCell label="TRADES" value={bt.stats.numTrades} />
-              <StatCell label="AVG RETURN" value={pct(bt.stats.avgReturn)} color={pctColor(bt.stats.avgReturn)} />
-              <StatCell label="WIN RATE" value={`${(bt.stats.winRate * 100).toFixed(0)}%`}
-                color={bt.stats.winRate >= 0.5 ? T.green : T.red} />
-            </div>
-            <div style={{ display: "flex", gap: 2 }}>
-              <StatCell label="BEST TRADE" value={pct(bt.stats.bestTrade)} color={T.green} />
-              <StatCell label="WORST TRADE" value={pct(bt.stats.worstTrade)} color={T.red} />
-              <StatCell label="MAX DRAWDOWN" value={`-${(bt.stats.maxDrawdown * 100).toFixed(1)}%`} color={T.red} />
-            </div>
           </div>
 
           {/* Trade table */}
           <div style={{ padding: "8px 8px 0" }}>
-            <div style={{ fontSize: 10, fontWeight: 600, color: T.text, letterSpacing: 0.8, marginBottom: 4 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8, marginBottom: 4 }}>
               TRADE LOG
               <span style={{ fontWeight: 400, color: T.dim, fontSize: 9, marginLeft: 8 }}>{bt.trades.length} signals</span>
             </div>
           </div>
-          <div style={{ flex: 1, overflow: "auto", padding: "0 8px 8px" }}>
+          <div style={{ flex: 1, overflow: "auto", padding: "0 8px 8px", maxHeight: 200 }}>
             <table style={{
               width: "100%", borderCollapse: "collapse", fontSize: 9, fontFamily: T.font,
             }}>
@@ -897,6 +877,71 @@ function BacktestView({ data }) {
             </table>
           </div>
         </div>
+
+        {/* RIGHT: Summary + forward returns */}
+        <div style={{ flex: "1 1 45%", minWidth: 0, display: "flex", flexDirection: "column", overflow: "auto" }}>
+
+          {/* Summary stats */}
+          <div style={{ padding: "8px 8px 4px" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8, marginBottom: 6 }}>
+              SUMMARY
+              <span style={{ fontWeight: 400, color: T.dim, fontSize: 9, marginLeft: 8 }}>
+                Hold {HORIZONS.find((h) => h.days === holdDays)?.key || "—"}
+              </span>
+            </div>
+            <div style={{ display: "flex", gap: 2, marginBottom: 2 }}>
+              <StatCell label="TRADES" value={bt.stats.numTrades} />
+              <StatCell label="AVG RETURN" value={pct(bt.stats.avgReturn)} color={pctColor(bt.stats.avgReturn)} />
+              <StatCell label="WIN RATE" value={`${(bt.stats.winRate * 100).toFixed(0)}%`}
+                color={bt.stats.winRate >= 0.5 ? T.green : T.red} />
+            </div>
+            <div style={{ display: "flex", gap: 2 }}>
+              <StatCell label="BEST TRADE" value={pct(bt.stats.bestTrade)} color={T.green} />
+              <StatCell label="WORST TRADE" value={pct(bt.stats.worstTrade)} color={T.red} />
+              <StatCell label="MAX DRAWDOWN" value={`-${(bt.stats.maxDrawdown * 100).toFixed(1)}%`} color={T.red} />
+            </div>
+          </div>
+
+          {/* Average forward returns with all-days comparison */}
+          <div style={{ padding: "8px 8px 4px" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8, marginBottom: 0 }}>
+              AVERAGE FORWARD RETURNS
+            </div>
+            <InfoBox>
+              <span style={{ color: T.orange, fontWeight: 600 }}>Reading the table: </span>
+              <span style={{ color: T.green }}>SIGNAL AVG</span> = average S&P 500 return after a buy signal at each horizon.
+              <span style={{ color: T.dim }}> ALL DAYS AVG</span> = average return over the same horizon on any random day — the baseline.
+              Green = positive. Red = negative. A signal that consistently beats the all-days average demonstrates genuine predictive edge.
+            </InfoBox>
+            <div style={{ display: "flex", gap: 2 }}>
+              {bt.horizonStats.map((h) => (
+                <div key={h.key} style={{
+                  flex: 1, padding: "6px 6px", background: T.bgPanel, border: `1px solid ${T.border}`,
+                  textAlign: "center",
+                }}>
+                  <div style={{ fontSize: 9, color: T.dim, fontWeight: 600, marginBottom: 3, letterSpacing: 0.5 }}>{h.key}</div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: pctColor(h.avg) }}>{pct(h.avg)}</div>
+                  <div style={{ fontSize: 8, color: T.dim, marginTop: 2 }}>
+                    {(h.winRate * 100).toFixed(0)}% win · {h.count} trades
+                  </div>
+                  <div style={{
+                    marginTop: 4, paddingTop: 4,
+                    borderTop: `1px solid ${T.border}`,
+                    fontSize: 8, color: T.dim,
+                  }}>
+                    ALL DAYS
+                  </div>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: pctColor(h.allDayAvg), marginTop: 1 }}>
+                    {pct(h.allDayAvg)}
+                  </div>
+                  <div style={{ fontSize: 8, color: T.dim, marginTop: 1 }}>
+                    {(h.allDayWin * 100).toFixed(0)}% win · {h.allDayCount.toLocaleString()}d
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </>
   );
@@ -927,7 +972,7 @@ function LiveSignalView({ data }) {
 
   return (
     <>
-      {/* Control bar — matches Cross-Asset style */}
+      {/* Control bar */}
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         padding: "6px 0", borderBottom: `1px solid ${T.border}`,
@@ -952,17 +997,21 @@ function LiveSignalView({ data }) {
         {/* LEFT: Composite chart */}
         <div style={{ flex: "1 1 55%", minWidth: 0, borderRight: `1px solid ${T.border}` }}>
           <div style={{
-            fontSize: 10, fontWeight: 600, color: T.text, letterSpacing: 0.8,
-            padding: "8px 8px 4px",
+            fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8,
+            padding: "8px 8px 0",
           }}>
             COMPOSITE SIGNAL
           </div>
+          <InfoBox>
+            <span style={{ color: T.orange, fontWeight: 600 }}>How to read this: </span>
+            The composite tracks how many of the 9 indicators are simultaneously active. Green bars show the signal count (0–9). When 3+ indicators fire within a 10-day window, the model triggers a <span style={{ color: T.green }}>▲ BUY</span> signal. Historically, clustered signals precede meaningful S&P 500 bounces.
+          </InfoBox>
           <div style={{ background: T.bgPanel }}>
             {compSliced && (
               <CompositeChart
                 dates={compSliced.dates} spx={compSliced.spx}
                 scores={compSliced.scores} triggers={compSliced.triggers}
-                height={480}
+                height={440}
               />
             )}
           </div>
@@ -971,8 +1020,8 @@ function LiveSignalView({ data }) {
         {/* RIGHT: Indicators list */}
         <div style={{ flex: "1 1 45%", minWidth: 0, overflow: "auto" }}>
           <div style={{
-            fontSize: 10, fontWeight: 600, color: T.text, letterSpacing: 0.8,
-            padding: "8px 8px 4px",
+            fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8,
+            padding: "8px 8px 0",
             display: "flex", justifyContent: "space-between",
           }}>
             <span>INDICATORS</span>
@@ -980,6 +1029,10 @@ function LiveSignalView({ data }) {
               Click to expand
             </span>
           </div>
+          <InfoBox>
+            <span style={{ color: T.orange, fontWeight: 600 }}>Reading the table: </span>
+            Each indicator monitors a different dimension of market stress — breadth, sentiment, volatility, and momentum. <span style={{ color: T.green, fontWeight: 600 }}>BUY</span> = the indicator has fired within the last 10 trading days. <span style={{ color: T.dim }}>IDLE</span> = no active signal. Expand any row to see its full history overlaid on the S&P 500.
+          </InfoBox>
           <div>
             {data?.indicators && IND_ORDER.map((id) => {
               const ind = data.indicators[id];

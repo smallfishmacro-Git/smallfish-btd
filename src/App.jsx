@@ -521,7 +521,7 @@ export default function App() {
 
   return (
     <div style={{ background: T.bg, minHeight: "100vh", color: T.text, fontFamily: T.font }}>
-      <TitleBar fetchedAt={data?.fetchedAt} onRefresh={() => loadData(true)} refreshing={refreshing} />
+      <TitleBar fetchedAt={data?.computedAt || data?.fetchedAt} onRefresh={() => loadData(true)} refreshing={refreshing} />
       <NavBar active="BUY THE DIP" />
 
       <div style={{ maxWidth: 1400, margin: "0 auto", padding: "0 12px" }}>
@@ -617,7 +617,7 @@ export default function App() {
                 </span> / 9
               </span>
               <span>
-                LAST UPDATED: {data?.fetchedAt ? new Date(data.fetchedAt).toLocaleDateString("en-GB") : "—"}
+                LAST UPDATED: {data?.computedAt || data?.fetchedAt ? new Date(data?.computedAt || data?.fetchedAt).toLocaleDateString("en-GB") : "—"}
               </span>
             </div>
           </div>

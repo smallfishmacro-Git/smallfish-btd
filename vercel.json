@@ -1,8 +1,8 @@
 {
   "crons": [
     {
-      "path": "/api/data?force=true",
-      "schedule": "0 20 * * *"
+      "path": "/api/data",
+      "schedule": "45 21 * * 1-5"
     }
   ],
   "headers": [

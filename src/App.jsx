@@ -12,7 +12,7 @@ async function fetchData(force = false) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Theme
+// Theme — unified terminal design (matches Cross-Asset Regimes)
 // ═══════════════════════════════════════════════════════════════
 const T = {
   bg: "#0a0a0c",
@@ -20,9 +20,10 @@ const T = {
   bgCard: "#111116",
   border: "#1c1c24",
   borderBright: "#2a2a35",
-  text: "#b8bcc4",
+  text: "#8a8f9a",
   dim: "#4a4e58",
   bright: "#e8eaef",
+  white: "#ffffff",
   cyan: "#00d4ff",
   orange: "#ff9f43",
   green: "#00ff88",
@@ -63,7 +64,7 @@ function sliceByTf(dates, arrays, tf) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// TimeframeBar
+// TimeframeBar — compact button strip (matches Cross-Asset)
 // ═══════════════════════════════════════════════════════════════
 function TimeframeBar({ value, onChange, count, style: outerStyle }) {
   return (
@@ -80,9 +81,9 @@ function TimeframeBar({ value, onChange, count, style: outerStyle }) {
           <button key={t} onClick={() => onChange(t)} style={{
             padding: "3px 8px", fontSize: 9, fontWeight: isActive ? 700 : 400,
             fontFamily: T.font, cursor: "pointer", letterSpacing: 0.3, borderRadius: 0,
-            background: isActive ? T.amber : "transparent",
+            background: isActive ? T.orange : "transparent",
             color: isActive ? "#000" : T.dim,
-            border: `1px solid ${isActive ? T.amber : T.border}`,
+            border: `1px solid ${isActive ? T.orange : T.border}`,
             marginLeft: -1,
           }}>{t}</button>
         );
@@ -284,15 +285,16 @@ function CompositeChart({ dates, spx, scores, triggers, height = 420 }) {
 // Signal Badge
 // ═══════════════════════════════════════════════════════════════
 function SignalBadge({ active }) {
-  const color = active ? T.green : T.amber;
+  const color = active ? T.green : T.dim;
   const label = active ? "BUY" : "IDLE";
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", justifyContent: "center",
-      width: 48, padding: "3px 0", fontSize: 9, fontWeight: 700,
+      width: 44, padding: "2px 0", fontSize: 9, fontWeight: 700,
       fontFamily: T.font, letterSpacing: 0.5,
-      background: `${color}18`, color: color,
-      border: `1px solid ${color}55`,
+      background: active ? `${T.green}18` : "transparent",
+      color: color,
+      border: `1px solid ${active ? T.green + "55" : T.border}`,
     }}>{label}</span>
   );
 }
@@ -336,12 +338,12 @@ function IndicatorRow({ id, indicator, isActive }) {
       {/* Header row */}
       <div onClick={() => setExpanded(!expanded)} style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "8px 8px 8px 0", cursor: "pointer",
+        padding: "7px 8px 7px 0", cursor: "pointer",
       }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <span style={{
             width: 16, height: 16, borderRadius: 2,
-            background: T.dim, color: T.bright,
+            background: T.border, color: T.text,
             fontSize: 9, fontWeight: 700, fontFamily: T.font,
             display: "inline-flex", alignItems: "center", justifyContent: "center",
           }}>{IND_NUMS[id]}</span>
@@ -380,17 +382,17 @@ function IndicatorRow({ id, indicator, isActive }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// TitleBar + NavBar
+// TitleBar — unified terminal header
 // ═══════════════════════════════════════════════════════════════
 function TitleBar({ fetchedAt, onRefresh, refreshing }) {
   return (
     <div style={{
       display: "flex", alignItems: "center", justifyContent: "space-between",
-      padding: "8px 12px", background: T.bg,
+      padding: "8px 16px", background: T.bg,
       borderBottom: `1px solid ${T.border}`,
     }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-        <span style={{ fontSize: 16, fontWeight: 700, color: T.amber, fontFamily: T.font, letterSpacing: 2 }}>
+        <span style={{ fontSize: 16, fontWeight: 700, color: T.orange, fontFamily: T.font, letterSpacing: 2 }}>
           SMALLFISHMACRO
         </span>
         <span style={{ fontSize: 12, fontWeight: 400, color: T.dim, fontFamily: T.font, letterSpacing: 1 }}>
@@ -410,22 +412,49 @@ function TitleBar({ fetchedAt, onRefresh, refreshing }) {
   );
 }
 
+// ═══════════════════════════════════════════════════════════════
+// NavBar — top-level tab navigation (unified across terminal)
+// ═══════════════════════════════════════════════════════════════
 const NAV_TABS = ["DASHBOARD", "BUY THE DIP", "MARKET RISK", "OVERVIEW", "STRATEGY MAP"];
 
 function NavBar({ active }) {
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 0,
-      borderBottom: `1px solid ${T.border}`, background: T.bg, padding: "0 12px",
+      borderBottom: `1px solid ${T.border}`, background: T.bg, padding: "0 16px",
     }}>
       {NAV_TABS.map((tab) => {
         const isActive = tab === active;
         return (
           <div key={tab} style={{
             padding: "8px 16px", fontSize: 11, fontWeight: isActive ? 700 : 400,
-            fontFamily: T.font, color: isActive ? T.amber : T.dim,
-            borderBottom: isActive ? `2px solid ${T.amber}` : "2px solid transparent",
+            fontFamily: T.font, color: isActive ? T.orange : T.dim,
+            borderBottom: isActive ? `2px solid ${T.orange}` : "2px solid transparent",
             cursor: "pointer", letterSpacing: 0.8,
+          }}>{tab}</div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SubTabs — secondary navigation below page title
+// ═══════════════════════════════════════════════════════════════
+function SubTabs({ tabs, active, onChange }) {
+  return (
+    <div style={{
+      display: "flex", gap: 0, borderBottom: `1px solid ${T.border}`,
+    }}>
+      {tabs.map((tab) => {
+        const isActive = tab === active;
+        return (
+          <div key={tab} onClick={() => onChange(tab)} style={{
+            padding: "8px 18px", fontSize: 11, fontWeight: isActive ? 600 : 400,
+            fontFamily: T.font, letterSpacing: 0.8, cursor: "pointer",
+            color: isActive ? T.white : T.dim,
+            borderBottom: isActive ? `2px solid ${T.white}` : "2px solid transparent",
+            marginBottom: -1,
           }}>{tab}</div>
         );
       })}
@@ -446,6 +475,114 @@ function isSignalActive(ind) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// BacktestPlaceholder
+// ═══════════════════════════════════════════════════════════════
+function BacktestPlaceholder() {
+  return (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "center",
+      minHeight: 400, color: T.dim, fontSize: 11, letterSpacing: 1,
+      border: `1px solid ${T.border}`, background: T.bgPanel,
+    }}>
+      BACKTEST MODULE — COMING SOON
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LiveSignalView — the main BTD content
+// ═══════════════════════════════════════════════════════════════
+function LiveSignalView({ data }) {
+  const [compTf, setCompTf] = useState("ALL");
+
+  const compSliced = useMemo(() => {
+    if (!data?.composite) return null;
+    const { dates, arrays: [spx, scores, ma2] } = sliceByTf(
+      data.composite.dates,
+      [data.composite.spx, data.composite.scores, data.composite.ma2],
+      compTf
+    );
+    const dateSet = new Set(dates);
+    const triggers = (data.composite.triggers || []).filter((t) => dateSet.has(t));
+    return { dates, spx, scores, ma2, triggers };
+  }, [data, compTf]);
+
+  const m = data?.metrics || {};
+  const activeCount = data?.indicators
+    ? IND_ORDER.filter((id) => data.indicators[id] && isSignalActive(data.indicators[id])).length
+    : 0;
+
+  return (
+    <>
+      {/* Control bar — matches Cross-Asset style */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "6px 0", borderBottom: `1px solid ${T.border}`,
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 9, color: T.dim }}>
+          <span>
+            <span style={{ color: T.green }}>▲</span> Buy trigger
+            &nbsp;&nbsp;
+            <span style={{ color: "rgba(0,255,136,0.3)" }}>█</span> Active zone
+          </span>
+          <span>
+            ACTIVE: <span style={{ color: T.green, fontWeight: 700 }}>{activeCount}</span>
+            <span style={{ color: T.dim }}> / 9</span>
+          </span>
+        </div>
+        <TimeframeBar value={compTf} onChange={setCompTf} count={compSliced?.dates.length} />
+      </div>
+
+      {/* Main 2-column layout */}
+      <div style={{ display: "flex", gap: 0, flex: 1, minHeight: 0 }}>
+
+        {/* LEFT: Composite chart */}
+        <div style={{ flex: "1 1 55%", minWidth: 0, borderRight: `1px solid ${T.border}` }}>
+          <div style={{
+            fontSize: 10, fontWeight: 600, color: T.text, letterSpacing: 0.8,
+            padding: "8px 8px 4px",
+          }}>
+            COMPOSITE SIGNAL
+          </div>
+          <div style={{ background: T.bgPanel }}>
+            {compSliced && (
+              <CompositeChart
+                dates={compSliced.dates} spx={compSliced.spx}
+                scores={compSliced.scores} triggers={compSliced.triggers}
+                height={480}
+              />
+            )}
+          </div>
+        </div>
+
+        {/* RIGHT: Indicators list */}
+        <div style={{ flex: "1 1 45%", minWidth: 0, overflow: "auto" }}>
+          <div style={{
+            fontSize: 10, fontWeight: 600, color: T.text, letterSpacing: 0.8,
+            padding: "8px 8px 4px",
+            display: "flex", justifyContent: "space-between",
+          }}>
+            <span>INDICATORS</span>
+            <span style={{ fontWeight: 400, color: T.dim, fontSize: 9, letterSpacing: 0.3 }}>
+              Click to expand
+            </span>
+          </div>
+          <div>
+            {data?.indicators && IND_ORDER.map((id) => {
+              const ind = data.indicators[id];
+              if (!ind) return null;
+              return (
+                <IndicatorRow key={id} id={id} indicator={ind} isActive={isSignalActive(ind)} />
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Main App
 // ═══════════════════════════════════════════════════════════════
 export default function App() {
@@ -453,7 +590,7 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [compTf, setCompTf] = useState("ALL");
+  const [subTab, setSubTab] = useState("LIVE SIGNAL");
 
   const loadData = useCallback(async (force = false) => {
     try {
@@ -472,167 +609,104 @@ export default function App() {
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const compSliced = useMemo(() => {
-    if (!data?.composite) return null;
-    const { dates, arrays: [spx, scores, ma2] } = sliceByTf(
-      data.composite.dates,
-      [data.composite.spx, data.composite.scores, data.composite.ma2],
-      compTf
-    );
-    const dateSet = new Set(dates);
-    const triggers = (data.composite.triggers || []).filter((t) => dateSet.has(t));
-    return { dates, spx, scores, ma2, triggers };
-  }, [data, compTf]);
+  const fetchedAt = data?.computedAt || data?.fetchedAt;
+  const m = data?.metrics || {};
+  const scoreColor = m.btdScore >= 3 ? T.green : m.btdScore >= 1 ? T.amber : T.dim;
+  const scoreLabel = m.btdScore >= 3 ? "ELEVATED" : m.btdScore >= 1 ? "MODERATE" : "NORMAL";
+
+  // Shell (loading + error share the same chrome)
+  const shell = (content) => (
+    <div style={{
+      background: T.bg, minHeight: "100vh", color: T.text, fontFamily: T.font,
+      display: "flex", flexDirection: "column",
+    }}>
+      <TitleBar fetchedAt={fetchedAt} onRefresh={() => loadData(true)} refreshing={refreshing} />
+      <NavBar active="BUY THE DIP" />
+
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "0 16px" }}>
+        {/* Page header row — title left, status right */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "10px 0 0",
+        }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+            <span style={{ fontSize: 16, fontWeight: 700, color: T.white, letterSpacing: 1 }}>
+              BUY THE DIP
+            </span>
+          </div>
+
+          {/* Status badges — right side like Cross-Asset has SPX/10Y/DXY */}
+          {data && (
+            <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+              <div style={{
+                padding: "3px 10px", fontSize: 10, fontFamily: T.font,
+                background: `${scoreColor}18`, border: `1px solid ${scoreColor}44`,
+                color: scoreColor, fontWeight: 700, letterSpacing: 0.5,
+              }}>
+                {scoreLabel} ({m.btdScore}/9)
+              </div>
+              <div style={{
+                padding: "3px 10px", fontSize: 9, fontFamily: T.font,
+                color: T.dim, background: T.bgPanel, border: `1px solid ${T.border}`,
+              }}>
+                SIGNAL <span style={{ color: T.bright }}>{m.lastSignalDate || "—"}</span>
+              </div>
+              <div style={{
+                padding: "3px 10px", fontSize: 9, fontFamily: T.font,
+                color: T.dim, background: T.bgPanel, border: `1px solid ${T.border}`,
+              }}>
+                TRIGGER <span style={{ color: T.bright }}>{m.lastTriggerDate || "—"}</span>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Sub-tabs */}
+        <SubTabs tabs={["LIVE SIGNAL", "BACKTEST"]} active={subTab} onChange={setSubTab} />
+
+        {/* Content */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+          {content}
+        </div>
+      </div>
+
+      {/* Footer */}
+      <div style={{
+        textAlign: "center", padding: "10px 0",
+        borderTop: `1px solid ${T.border}`,
+      }}>
+        <span style={{ color: T.dim, fontSize: 8, letterSpacing: 1, fontFamily: T.font }}>
+          SMALLFISHMACRO · BARCHART DATA · GITHUB ACTIONS · VERCEL EDGE
+        </span>
+      </div>
+    </div>
+  );
 
   if (loading) {
-    return (
-      <div style={{ background: T.bg, minHeight: "100vh", fontFamily: T.font }}>
-        <TitleBar fetchedAt={null} onRefresh={() => {}} refreshing={false} />
-        <NavBar active="BUY THE DIP" />
-        <div style={{ textAlign: "center", paddingTop: 100 }}>
-          <div style={{ fontSize: 12, color: T.amber, letterSpacing: 2, marginBottom: 6 }}>LOADING</div>
-          <div style={{ fontSize: 10, color: T.dim }}>Fetching 12 data series...</div>
-        </div>
+    return shell(
+      <div style={{ textAlign: "center", paddingTop: 100 }}>
+        <div style={{ fontSize: 12, color: T.orange, letterSpacing: 2, marginBottom: 6 }}>LOADING</div>
+        <div style={{ fontSize: 10, color: T.dim }}>Fetching indicator data...</div>
       </div>
     );
   }
 
   if (error) {
-    return (
-      <div style={{ background: T.bg, minHeight: "100vh", fontFamily: T.font }}>
-        <TitleBar fetchedAt={null} onRefresh={() => loadData(true)} refreshing={false} />
-        <NavBar active="BUY THE DIP" />
-        <div style={{ textAlign: "center", paddingTop: 100 }}>
-          <div style={{ fontSize: 12, color: T.red, marginBottom: 8 }}>ERROR: {error}</div>
-          <button onClick={() => loadData(true)} style={{
-            padding: "4px 14px", fontSize: 10, fontFamily: T.font,
-            border: `1px solid ${T.border}`, background: "transparent",
-            color: T.dim, cursor: "pointer",
-          }}>RETRY</button>
-        </div>
+    return shell(
+      <div style={{ textAlign: "center", paddingTop: 100 }}>
+        <div style={{ fontSize: 12, color: T.red, marginBottom: 8 }}>ERROR: {error}</div>
+        <button onClick={() => loadData(true)} style={{
+          padding: "4px 14px", fontSize: 10, fontFamily: T.font,
+          border: `1px solid ${T.border}`, background: "transparent",
+          color: T.dim, cursor: "pointer",
+        }}>RETRY</button>
       </div>
     );
   }
 
-  const m = data?.metrics || {};
-  const scoreColor = m.btdScore >= 3 ? T.green : m.btdScore >= 1 ? T.amber : T.dim;
-  const scoreBg = m.btdScore >= 3 ? T.greenDim : m.btdScore >= 1 ? T.amberDim : "rgba(255,255,255,0.04)";
-  const scoreLabel = m.btdScore >= 3 ? "ELEVATED" : m.btdScore >= 1 ? "MODERATE" : "NORMAL";
-
-  return (
-    <div style={{ background: T.bg, minHeight: "100vh", color: T.text, fontFamily: T.font }}>
-      <TitleBar fetchedAt={data?.computedAt || data?.fetchedAt} onRefresh={() => loadData(true)} refreshing={refreshing} />
-      <NavBar active="BUY THE DIP" />
-
-      <div style={{ maxWidth: 1400, margin: "0 auto", padding: "0 12px" }}>
-        {/* Page Title */}
-        <div style={{ padding: "10px 0 6px" }}>
-          <span style={{ fontSize: 15, fontWeight: 700, color: T.amber, letterSpacing: 1 }}>
-            BUY THE DIP
-          </span>
-        </div>
-
-        {/* Status Banner */}
-        <div style={{
-          display: "flex", alignItems: "center",
-          background: scoreBg, border: `1px solid ${scoreColor}33`,
-          marginBottom: 8, fontSize: 10,
-        }}>
-          <div style={{
-            padding: "5px 14px", borderRight: `1px solid ${scoreColor}33`,
-            color: scoreColor, fontWeight: 700, fontSize: 14, minWidth: 56, textAlign: "center",
-          }}>
-            {m.btdScore}<span style={{ fontSize: 9, fontWeight: 400, color: T.dim }}>/9</span>
-          </div>
-          <div style={{ padding: "5px 14px", color: scoreColor, fontWeight: 600, letterSpacing: 1 }}>
-            {scoreLabel}
-          </div>
-          <div style={{ flex: 1 }} />
-          <div style={{ padding: "5px 14px", color: T.dim, fontSize: 9 }}>
-            LAST SIGNAL: <span style={{ color: T.bright }}>{m.lastSignalDate || "—"}</span>
-          </div>
-          <div style={{ padding: "5px 14px", color: T.dim, fontSize: 9, borderLeft: `1px solid ${scoreColor}22` }}>
-            LAST TRIGGER: <span style={{ color: T.bright }}>{m.lastTriggerDate || "—"}</span>
-          </div>
-        </div>
-
-        {/* Split Layout */}
-        <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-          {/* LEFT: Composite */}
-          <div style={{ flex: 1, minWidth: 0, maxWidth: "50%" }}>
-            <div style={{
-              display: "flex", justifyContent: "space-between", alignItems: "center",
-              marginBottom: 4,
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontSize: 11, fontWeight: 700, color: T.amber, letterSpacing: 0.8 }}>
-                  COMPOSITE SIGNAL
-                </span>
-                <span style={{ fontSize: 9, color: T.dim }}>
-                  <span style={{ color: T.green }}>▲</span> Buy trigger
-                  &nbsp;&nbsp;
-                  <span style={{ color: "rgba(0,255,136,0.3)" }}>█</span> Active
-                </span>
-              </div>
-              <TimeframeBar value={compTf} onChange={setCompTf} count={compSliced?.dates.length} />
-            </div>
-            <div style={{ background: T.bgPanel, border: `1px solid ${T.border}` }}>
-              {compSliced && (
-                <CompositeChart
-                  dates={compSliced.dates} spx={compSliced.spx}
-                  scores={compSliced.scores} triggers={compSliced.triggers}
-                  height={420}
-                />
-              )}
-            </div>
-          </div>
-
-          {/* RIGHT: Indicators */}
-          <div style={{ flex: 1, minWidth: 0, maxWidth: "50%", borderLeft: `1px solid ${T.border}`, paddingLeft: 8 }}>
-            <div style={{
-              fontSize: 11, fontWeight: 700, color: T.amber, letterSpacing: 0.8,
-              padding: "0 0 6px", borderBottom: `1px solid ${T.border}`,
-            }}>
-              INDICATORS
-              <span style={{ fontWeight: 400, color: T.dim, fontSize: 9, marginLeft: 10, letterSpacing: 0.3 }}>
-                Click to expand chart
-              </span>
-            </div>
-
-            {data?.indicators && IND_ORDER.map((id) => {
-              const ind = data.indicators[id];
-              if (!ind) return null;
-              return (
-                <IndicatorRow key={id} id={id} indicator={ind} isActive={isSignalActive(ind)} />
-              );
-            })}
-
-            <div style={{
-              padding: "10px 0", fontSize: 9, color: T.dim,
-              display: "flex", justifyContent: "space-between",
-            }}>
-              <span>
-                ACTIVE: <span style={{ color: T.green, fontWeight: 700 }}>
-                  {data?.indicators ? IND_ORDER.filter((id) => data.indicators[id] && isSignalActive(data.indicators[id])).length : 0}
-                </span> / 9
-              </span>
-              <span>
-                LAST UPDATED: {data?.computedAt || data?.fetchedAt ? new Date(data?.computedAt || data?.fetchedAt).toLocaleDateString("en-GB") : "—"}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div style={{
-          textAlign: "center", padding: "14px 0 18px", marginTop: 8,
-          borderTop: `1px solid ${T.border}`,
-        }}>
-          <span style={{ color: T.dim, fontSize: 8, letterSpacing: 1 }}>
-            SMALLFISHMACRO · BARCHART DATA · GITHUB ACTIONS · VERCEL EDGE
-          </span>
-        </div>
-      </div>
-    </div>
+  return shell(
+    subTab === "LIVE SIGNAL"
+      ? <LiveSignalView data={data} />
+      : <BacktestPlaceholder />
   );
 }

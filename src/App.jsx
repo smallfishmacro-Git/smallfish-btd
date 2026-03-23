@@ -96,6 +96,142 @@ function TimeframeBar({ value, onChange, count, style: outerStyle }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// ZoomSlider — dual-handle range slider for chart zoom
+// ═══════════════════════════════════════════════════════════════
+function ZoomSlider({ totalCount, zoomStart, zoomEnd, onChange, dates }) {
+  const trackRef = useRef(null);
+  const dragging = useRef(null); // 'left' | 'right' | 'track'
+  const dragStart = useRef({ x: 0, left: 0, right: 0 });
+
+  const isZoomed = zoomStart > 0 || zoomEnd < totalCount - 1;
+  const leftPct = totalCount > 1 ? (zoomStart / (totalCount - 1)) * 100 : 0;
+  const rightPct = totalCount > 1 ? (zoomEnd / (totalCount - 1)) * 100 : 100;
+
+  const pctToIdx = (pct) => Math.round((pct / 100) * (totalCount - 1));
+
+  const handlePointerDown = (e, type) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragging.current = type;
+    dragStart.current = { x: e.clientX, left: leftPct, right: rightPct };
+    const onMove = (ev) => {
+      if (!trackRef.current || !dragging.current) return;
+      const rect = trackRef.current.getBoundingClientRect();
+      const deltaPct = ((ev.clientX - dragStart.current.x) / rect.width) * 100;
+      const minSpan = Math.max(2, (10 / totalCount) * 100); // at least 10 points
+
+      if (dragging.current === 'left') {
+        const newLeft = Math.max(0, Math.min(dragStart.current.left + deltaPct, rightPct - minSpan));
+        onChange(pctToIdx(newLeft), zoomEnd);
+      } else if (dragging.current === 'right') {
+        const newRight = Math.min(100, Math.max(dragStart.current.right + deltaPct, leftPct + minSpan));
+        onChange(zoomStart, pctToIdx(newRight));
+      } else if (dragging.current === 'track') {
+        const span = dragStart.current.right - dragStart.current.left;
+        let newLeft = dragStart.current.left + deltaPct;
+        let newRight = dragStart.current.right + deltaPct;
+        if (newLeft < 0) { newLeft = 0; newRight = span; }
+        if (newRight > 100) { newRight = 100; newLeft = 100 - span; }
+        onChange(pctToIdx(newLeft), pctToIdx(newRight));
+      }
+    };
+    const onUp = () => { dragging.current = null; window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  const fmtDate = (idx) => {
+    if (!dates || idx < 0 || idx >= dates.length) return '';
+    return new Date(dates[idx]).toLocaleDateString('en-US', { year: '2-digit', month: 'short', day: 'numeric' });
+  };
+
+  return (
+    <div style={{ padding: '4px 0 2px', display: 'flex', alignItems: 'center', gap: 8 }}>
+      <span style={{ fontSize: 8, color: T.dim, fontFamily: T.font, letterSpacing: 0.5, whiteSpace: 'nowrap' }}>ZOOM:</span>
+      <div ref={trackRef} style={{
+        flex: 1, height: 14, position: 'relative', cursor: 'default', userSelect: 'none',
+      }}>
+        {/* Track background */}
+        <div style={{
+          position: 'absolute', top: 5, left: 0, right: 0, height: 4,
+          background: T.border, borderRadius: 2,
+        }} />
+        {/* Active range */}
+        <div
+          style={{
+            position: 'absolute', top: 5, height: 4,
+            left: `${leftPct}%`, width: `${rightPct - leftPct}%`,
+            background: isZoomed ? T.orange : 'rgba(255,159,67,0.3)',
+            borderRadius: 2, cursor: 'grab',
+          }}
+          onPointerDown={(e) => handlePointerDown(e, 'track')}
+        />
+        {/* Left handle */}
+        <div
+          style={{
+            position: 'absolute', top: 1, left: `${leftPct}%`, transform: 'translateX(-50%)',
+            width: 10, height: 12, borderRadius: 2,
+            background: isZoomed ? T.orange : T.dim, cursor: 'ew-resize',
+            border: `1px solid ${isZoomed ? T.orange : T.border}`,
+          }}
+          onPointerDown={(e) => handlePointerDown(e, 'left')}
+        />
+        {/* Right handle */}
+        <div
+          style={{
+            position: 'absolute', top: 1, left: `${rightPct}%`, transform: 'translateX(-50%)',
+            width: 10, height: 12, borderRadius: 2,
+            background: isZoomed ? T.orange : T.dim, cursor: 'ew-resize',
+            border: `1px solid ${isZoomed ? T.orange : T.border}`,
+          }}
+          onPointerDown={(e) => handlePointerDown(e, 'right')}
+        />
+      </div>
+      {/* Date labels */}
+      <span style={{ fontSize: 8, color: isZoomed ? T.orange : T.dim, fontFamily: T.font, whiteSpace: 'nowrap', minWidth: 110, textAlign: 'right' }}>
+        {isZoomed ? `${fmtDate(zoomStart)} — ${fmtDate(zoomEnd)}` : 'FULL RANGE'}
+      </span>
+      {/* Reset button */}
+      {isZoomed && (
+        <button
+          onClick={() => onChange(0, totalCount - 1)}
+          style={{
+            padding: '1px 6px', fontSize: 8, fontFamily: T.font,
+            background: 'transparent', color: T.dim, cursor: 'pointer',
+            border: `1px solid ${T.border}`, letterSpacing: 0.3,
+          }}
+        >RESET</button>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// useZoom — hook for zoom state management
+// ═══════════════════════════════════════════════════════════════
+function useZoom(totalCount) {
+  const [zoomStart, setZoomStart] = useState(0);
+  const [zoomEnd, setZoomEnd] = useState(totalCount - 1);
+  const prevCount = useRef(totalCount);
+
+  // Reset zoom when data length changes (e.g. timeframe switch)
+  useEffect(() => {
+    if (totalCount !== prevCount.current) {
+      setZoomStart(0);
+      setZoomEnd(totalCount - 1);
+      prevCount.current = totalCount;
+    }
+  }, [totalCount]);
+
+  const setZoom = useCallback((s, e) => {
+    setZoomStart(Math.max(0, Math.min(s, totalCount - 2)));
+    setZoomEnd(Math.max(1, Math.min(e, totalCount - 1)));
+  }, [totalCount]);
+
+  return { zoomStart, zoomEnd: Math.min(zoomEnd, totalCount - 1), setZoom };
+}
+
+// ═══════════════════════════════════════════════════════════════
 // TerminalChart — dual-panel SVG (SPX top, indicator bottom)
 // ═══════════════════════════════════════════════════════════════
 function TerminalChart({
@@ -257,7 +393,7 @@ function CompositeChart({ dates, spx, scores, triggers, height = 420 }) {
       <svg width={W} height={height} style={{ display: "block" }}>
         {spxLbls.map((l, i) => <line key={i} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.03)" />)}
         {[3, 6].map((s) => <line key={s} x1={pad.l} x2={W - pad.r} y1={pad.t + H - barH(s)} y2={pad.t + H - barH(s)} stroke="rgba(0,255,136,0.1)" strokeDasharray="2,4" />)}
-        {scores.map((s, i) => s > 0 && <rect key={i} x={xS(i) - bw / 2} y={pad.t + H - barH(s)} width={bw} height={barH(s)} fill={`rgba(0,255,136,${0.05 + s * 0.02})`} />)}
+        {scores.map((s, i) => s > 0 && <rect key={i} x={xS(i) - bw / 2} y={pad.t + H - barH(s)} width={bw} height={barH(s)} fill="rgba(0,100,40,0.85)" />)}
         <path d={path} fill="none" stroke={T.bright} strokeWidth={1} />
         {trigPts.map((p, i) => <polygon key={i} points={`${p.x},${p.y - 5} ${p.x - 3.5},${p.y + 1.5} ${p.x + 3.5},${p.y + 1.5}`} fill={T.green} opacity={0.85} />)}
         {spxLbls.map((l, i) => <text key={i} x={pad.l - 4} y={l.y + 3} fill={T.dim} fontSize={8} textAnchor="end" fontFamily={T.font}>{l.label}</text>)}
@@ -332,6 +468,11 @@ function IndicatorRow({ id, indicator, isActive }) {
     [indicator, tf]
   );
 
+  const { zoomStart, zoomEnd, setZoom } = useZoom(slD.length);
+  const zDates = useMemo(() => slD.slice(zoomStart, zoomEnd + 1), [slD, zoomStart, zoomEnd]);
+  const zSpx = useMemo(() => slSpx.slice(zoomStart, zoomEnd + 1), [slSpx, zoomStart, zoomEnd]);
+  const zVal = useMemo(() => slVal.slice(zoomStart, zoomEnd + 1), [slVal, zoomStart, zoomEnd]);
+
   return (
     <div style={{
       background: expanded ? T.bgCard : "transparent",
@@ -365,12 +506,12 @@ function IndicatorRow({ id, indicator, isActive }) {
       {expanded && (
         <div style={{ padding: "4px 8px 10px" }}>
           <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 4 }}>
-            <TimeframeBar value={tf} onChange={setTf} count={slD.length} />
+            <TimeframeBar value={tf} onChange={setTf} count={zDates.length} />
           </div>
           <TerminalChart
-            dates={slD}
-            topValues={slSpx}
-            bottomValues={slVal}
+            dates={zDates}
+            topValues={zSpx}
+            bottomValues={zVal}
             topLabel="S&P 500"
             bottomLabel={indicator.name}
             signals={indicator.signals}
@@ -378,6 +519,7 @@ function IndicatorRow({ id, indicator, isActive }) {
             bottomColor={color}
             height={340}
           />
+          <ZoomSlider totalCount={slD.length} zoomStart={zoomStart} zoomEnd={zoomEnd} onChange={setZoom} dates={slD} />
         </div>
       )}
     </div>
@@ -783,6 +925,17 @@ function BacktestView({ data }) {
     [data, minScore, holdDays, dateRange]
   );
 
+  const eqLen = bt?.equity?.dates?.length || 0;
+  const { zoomStart: eqZS, zoomEnd: eqZE, setZoom: setEqZoom } = useZoom(eqLen);
+  const eqZoomed = useMemo(() => {
+    if (!bt) return null;
+    return {
+      dates: bt.equity.dates.slice(eqZS, eqZE + 1),
+      strategy: bt.equity.strategy.slice(eqZS, eqZE + 1),
+      buyHold: bt.equity.buyHold.slice(eqZS, eqZE + 1),
+    };
+  }, [bt, eqZS, eqZE]);
+
   if (!bt) return null;
 
   const pct = (v) => v == null ? "—" : `${(v * 100) >= 0 ? "+" : ""}${(v * 100).toFixed(1)}%`;
@@ -825,13 +978,18 @@ function BacktestView({ data }) {
             The <span style={{ color: T.green }}>green line</span> shows the cumulative return of buying the S&P 500 at each composite trigger and holding for the selected period. The <span style={{ color: T.dim }}>grey line</span> is a simple buy-and-hold benchmark. <span style={{ color: T.orange }}>●</span> marks each entry point. The strategy captures short-term mean-reversion after broad market stress.
           </InfoBox>
           <div style={{ background: T.bgPanel, flex: 1 }}>
-            <EquityCurveChart
-              dates={bt.equity.dates}
-              strategy={bt.equity.strategy}
-              buyHold={bt.equity.buyHold}
-              triggerDates={bt.trades.map((t) => t.date)}
-              height={360}
-            />
+            {eqZoomed && (
+              <EquityCurveChart
+                dates={eqZoomed.dates}
+                strategy={eqZoomed.strategy}
+                buyHold={eqZoomed.buyHold}
+                triggerDates={bt.trades.map((t) => t.date)}
+                height={360}
+              />
+            )}
+          </div>
+          <div style={{ padding: "0 8px" }}>
+            {bt.equity.dates.length > 0 && <ZoomSlider totalCount={eqLen} zoomStart={eqZS} zoomEnd={eqZE} onChange={setEqZoom} dates={bt.equity.dates} />}
           </div>
 
           {/* Trade table */}
@@ -972,6 +1130,20 @@ function LiveSignalView({ data }) {
     return { dates, spx, scores, ma2, triggers };
   }, [data, compTf]);
 
+  const compLen = compSliced?.dates?.length || 0;
+  const { zoomStart: compZS, zoomEnd: compZE, setZoom: setCompZoom } = useZoom(compLen);
+  const compZoomed = useMemo(() => {
+    if (!compSliced) return null;
+    const zd = compSliced.dates.slice(compZS, compZE + 1);
+    const dateSet = new Set(zd);
+    return {
+      dates: zd,
+      spx: compSliced.spx.slice(compZS, compZE + 1),
+      scores: compSliced.scores.slice(compZS, compZE + 1),
+      triggers: compSliced.triggers.filter((t) => dateSet.has(t)),
+    };
+  }, [compSliced, compZS, compZE]);
+
   const m = data?.metrics || {};
   const activeCount = data?.indicators
     ? IND_ORDER.filter((id) => data.indicators[id] && isSignalActive(data.indicators[id])).length
@@ -988,14 +1160,14 @@ function LiveSignalView({ data }) {
           <span>
             <span style={{ color: T.green }}>▲</span> Buy trigger
             &nbsp;&nbsp;
-            <span style={{ color: "rgba(0,255,136,0.3)" }}>█</span> Active zone
+            <span style={{ color: "rgba(0,100,40,0.85)" }}>█</span> Active zone
           </span>
           <span>
             ACTIVE: <span style={{ color: T.green, fontWeight: 700 }}>{activeCount}</span>
             <span style={{ color: T.dim }}> / 9</span>
           </span>
         </div>
-        <TimeframeBar value={compTf} onChange={setCompTf} count={compSliced?.dates.length} />
+        <TimeframeBar value={compTf} onChange={setCompTf} count={compZoomed?.dates.length} />
       </div>
 
       {/* Main 2-column layout */}
@@ -1014,13 +1186,16 @@ function LiveSignalView({ data }) {
             The composite tracks how many of the 9 indicators are simultaneously active. Green bars show the signal count (0–9). When 3+ indicators fire within a 10-day window, the model triggers a <span style={{ color: T.green }}>▲ BUY</span> signal. Historically, clustered signals precede meaningful S&P 500 bounces.
           </InfoBox>
           <div style={{ background: T.bgPanel }}>
-            {compSliced && (
+            {compZoomed && (
               <CompositeChart
-                dates={compSliced.dates} spx={compSliced.spx}
-                scores={compSliced.scores} triggers={compSliced.triggers}
+                dates={compZoomed.dates} spx={compZoomed.spx}
+                scores={compZoomed.scores} triggers={compZoomed.triggers}
                 height={440}
               />
             )}
+          </div>
+          <div style={{ padding: "0 8px" }}>
+            {compSliced && <ZoomSlider totalCount={compLen} zoomStart={compZS} zoomEnd={compZE} onChange={setCompZoom} dates={compSliced.dates} />}
           </div>
         </div>
 

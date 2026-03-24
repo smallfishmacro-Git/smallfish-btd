@@ -393,7 +393,7 @@ function CompositeChart({ dates, spx, scores, triggers, height = 420 }) {
       <svg width={W} height={height} style={{ display: "block" }}>
         {spxLbls.map((l, i) => <line key={i} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.03)" />)}
         {[3, 6].map((s) => <line key={s} x1={pad.l} x2={W - pad.r} y1={pad.t + H - barH(s)} y2={pad.t + H - barH(s)} stroke="rgba(0,255,136,0.1)" strokeDasharray="2,4" />)}
-        {scores.map((s, i) => s > 0 && <rect key={i} x={xS(i) - bw / 2} y={pad.t + H - barH(s)} width={bw} height={barH(s)} fill="rgba(180,80,0,0.85)" />)}
+        {scores.map((s, i) => s > 0 && <rect key={i} x={xS(i) - bw / 2} y={pad.t + H - barH(s)} width={bw} height={barH(s)} fill="rgba(140,60,0,0.85)" />)}
         <path d={path} fill="none" stroke={T.bright} strokeWidth={1} />
         {trigPts.map((p, i) => <polygon key={i} points={`${p.x},${p.y - 5} ${p.x - 3.5},${p.y + 1.5} ${p.x + 3.5},${p.y + 1.5}`} fill={T.green} opacity={0.85} />)}
         {spxLbls.map((l, i) => <text key={i} x={pad.l - 4} y={l.y + 3} fill={T.dim} fontSize={8} textAnchor="end" fontFamily={T.font}>{l.label}</text>)}
@@ -1160,7 +1160,7 @@ function LiveSignalView({ data }) {
           <span>
             <span style={{ color: T.green }}>▲</span> Buy trigger
             &nbsp;&nbsp;
-            <span style={{ color: "rgba(180,80,0,0.85)" }}>█</span> Active zone
+            <span style={{ color: "rgba(140,60,0,0.85)" }}>█</span> Active zone
           </span>
           <span>
             ACTIVE: <span style={{ color: T.green, fontWeight: 700 }}>{activeCount}</span>

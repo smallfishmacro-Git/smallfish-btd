@@ -4,34 +4,21 @@ import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 // API
 // ═══════════════════════════════════════════════════════════════
 const API = "/api/data";
-async function fetchData(force = false) {
-  const url = force ? `${API}?force=true` : API;
-  const res = await fetch(url);
+async function fetchData() {
+  const res = await fetch(API);
   if (!res.ok) throw new Error(`API ${res.status}`);
   return res.json();
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Theme — unified terminal design (matches Cross-Asset Regimes)
+// Theme — unified terminal design
 // ═══════════════════════════════════════════════════════════════
 const T = {
-  bg: "#0a0a0c",
-  bgPanel: "#0e0e12",
-  bgCard: "#111116",
-  border: "#1c1c24",
-  borderBright: "#2a2a35",
-  text: "#8a8f9a",
-  dim: "#4a4e58",
-  bright: "#e8eaef",
-  white: "#ffffff",
-  cyan: "#00d4ff",
-  orange: "#ff9f43",
-  green: "#00ff88",
-  red: "#ff4757",
-  amber: "#ffbe0b",
-  purple: "#a855f7",
-  greenDim: "rgba(0,255,136,0.15)",
-  amberDim: "rgba(255,190,11,0.12)",
+  bg: "#0a0a0c", bgPanel: "#0e0e12", bgCard: "#111116",
+  border: "#1c1c24", borderBright: "#2a2a35",
+  text: "#8a8f9a", dim: "#4a4e58", bright: "#e8eaef", white: "#ffffff",
+  cyan: "#00d4ff", orange: "#ff9f43", green: "#00ff88",
+  red: "#ff4757", amber: "#ffbe0b", purple: "#a855f7",
   font: "'JetBrains Mono', 'Fira Code', 'SF Mono', monospace",
 };
 
@@ -39,24 +26,14 @@ const T = {
 // Timeframe
 // ═══════════════════════════════════════════════════════════════
 const TF_LIST = ["1M", "3M", "6M", "YTD", "1Y", "2Y", "5Y", "10Y", "15Y", "20Y", "ALL"];
-
 function tfCutoff(tf) {
   const now = new Date(), y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
-  switch (tf) {
-    case "1M": return new Date(y, m - 1, d);
-    case "3M": return new Date(y, m - 3, d);
-    case "6M": return new Date(y, m - 6, d);
-    case "YTD": return new Date(y, 0, 1);
-    case "1Y": return new Date(y - 1, m, d);
-    case "2Y": return new Date(y - 2, m, d);
-    case "5Y": return new Date(y - 5, m, d);
-    case "10Y": return new Date(y - 10, m, d);
-    case "15Y": return new Date(y - 15, m, d);
-    case "20Y": return new Date(y - 20, m, d);
-    default: return null;
-  }
+  const map = { "1M": [0,1], "3M": [0,3], "6M": [0,6], "YTD": null, "1Y": [1,0], "2Y": [2,0], "5Y": [5,0], "10Y": [10,0], "15Y": [15,0], "20Y": [20,0] };
+  if (tf === "YTD") return new Date(y, 0, 1);
+  if (tf === "ALL") return null;
+  const [yy, mm] = map[tf] || [0, 0];
+  return yy ? new Date(y - yy, m, d) : new Date(y, m - mm, d);
 }
-
 function sliceByTf(dates, arrays, tf) {
   const cutoff = tfCutoff(tf);
   if (!cutoff) return { dates, arrays };
@@ -67,594 +44,575 @@ function sliceByTf(dates, arrays, tf) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// TimeframeBar — compact button strip (matches Cross-Asset)
-// ═══════════════════════════════════════════════════════════════
-function TimeframeBar({ value, onChange, count, style: outerStyle }) {
-  return (
-    <div style={{ display: "flex", gap: 0, alignItems: "center", ...outerStyle }}>
-      {count != null && (
-        <span style={{ color: T.dim, fontSize: 9, marginRight: 8, fontFamily: T.font, letterSpacing: 0.5 }}>
-          {count.toLocaleString()}D
-        </span>
-      )}
-      <span style={{ color: T.dim, fontSize: 9, fontFamily: T.font, letterSpacing: 0.5, marginRight: 6 }}>RANGE:</span>
-      {TF_LIST.map((t) => {
-        const isActive = value === t;
-        return (
-          <button key={t} onClick={() => onChange(t)} style={{
-            padding: "3px 8px", fontSize: 9, fontWeight: isActive ? 700 : 400,
-            fontFamily: T.font, cursor: "pointer", letterSpacing: 0.3, borderRadius: 0,
-            background: isActive ? T.orange : "transparent",
-            color: isActive ? "#000" : T.dim,
-            border: `1px solid ${isActive ? T.orange : T.border}`,
-            marginLeft: -1,
-          }}>{t}</button>
-        );
-      })}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// ZoomSlider — dual-handle range slider for chart zoom
-// ═══════════════════════════════════════════════════════════════
-function ZoomSlider({ totalCount, zoomStart, zoomEnd, onChange, dates }) {
-  const trackRef = useRef(null);
-  const dragging = useRef(null); // 'left' | 'right' | 'track'
-  const dragStart = useRef({ x: 0, left: 0, right: 0 });
-
-  const isZoomed = zoomStart > 0 || zoomEnd < totalCount - 1;
-  const leftPct = totalCount > 1 ? (zoomStart / (totalCount - 1)) * 100 : 0;
-  const rightPct = totalCount > 1 ? (zoomEnd / (totalCount - 1)) * 100 : 100;
-
-  const pctToIdx = (pct) => Math.round((pct / 100) * (totalCount - 1));
-
-  const handlePointerDown = (e, type) => {
-    e.preventDefault();
-    e.stopPropagation();
-    dragging.current = type;
-    dragStart.current = { x: e.clientX, left: leftPct, right: rightPct };
-    const onMove = (ev) => {
-      if (!trackRef.current || !dragging.current) return;
-      const rect = trackRef.current.getBoundingClientRect();
-      const deltaPct = ((ev.clientX - dragStart.current.x) / rect.width) * 100;
-      const minSpan = Math.max(2, (10 / totalCount) * 100); // at least 10 points
-
-      if (dragging.current === 'left') {
-        const newLeft = Math.max(0, Math.min(dragStart.current.left + deltaPct, rightPct - minSpan));
-        onChange(pctToIdx(newLeft), zoomEnd);
-      } else if (dragging.current === 'right') {
-        const newRight = Math.min(100, Math.max(dragStart.current.right + deltaPct, leftPct + minSpan));
-        onChange(zoomStart, pctToIdx(newRight));
-      } else if (dragging.current === 'track') {
-        const span = dragStart.current.right - dragStart.current.left;
-        let newLeft = dragStart.current.left + deltaPct;
-        let newRight = dragStart.current.right + deltaPct;
-        if (newLeft < 0) { newLeft = 0; newRight = span; }
-        if (newRight > 100) { newRight = 100; newLeft = 100 - span; }
-        onChange(pctToIdx(newLeft), pctToIdx(newRight));
-      }
-    };
-    const onUp = () => { dragging.current = null; window.removeEventListener('pointermove', onMove); window.removeEventListener('pointerup', onUp); };
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-  };
-
-  const fmtDate = (idx) => {
-    if (!dates || idx < 0 || idx >= dates.length) return '';
-    return new Date(dates[idx]).toLocaleDateString('en-US', { year: '2-digit', month: 'short', day: 'numeric' });
-  };
-
-  return (
-    <div style={{ padding: '4px 0 2px', display: 'flex', alignItems: 'center', gap: 8 }}>
-      <span style={{ fontSize: 8, color: T.dim, fontFamily: T.font, letterSpacing: 0.5, whiteSpace: 'nowrap' }}>ZOOM:</span>
-      <div ref={trackRef} style={{
-        flex: 1, height: 14, position: 'relative', cursor: 'default', userSelect: 'none',
-      }}>
-        {/* Track background */}
-        <div style={{
-          position: 'absolute', top: 5, left: 0, right: 0, height: 4,
-          background: T.border, borderRadius: 2,
-        }} />
-        {/* Active range */}
-        <div
-          style={{
-            position: 'absolute', top: 5, height: 4,
-            left: `${leftPct}%`, width: `${rightPct - leftPct}%`,
-            background: isZoomed ? T.orange : 'rgba(255,159,67,0.3)',
-            borderRadius: 2, cursor: 'grab',
-          }}
-          onPointerDown={(e) => handlePointerDown(e, 'track')}
-        />
-        {/* Left handle */}
-        <div
-          style={{
-            position: 'absolute', top: 1, left: `${leftPct}%`, transform: 'translateX(-50%)',
-            width: 10, height: 12, borderRadius: 2,
-            background: isZoomed ? T.orange : T.dim, cursor: 'ew-resize',
-            border: `1px solid ${isZoomed ? T.orange : T.border}`,
-          }}
-          onPointerDown={(e) => handlePointerDown(e, 'left')}
-        />
-        {/* Right handle */}
-        <div
-          style={{
-            position: 'absolute', top: 1, left: `${rightPct}%`, transform: 'translateX(-50%)',
-            width: 10, height: 12, borderRadius: 2,
-            background: isZoomed ? T.orange : T.dim, cursor: 'ew-resize',
-            border: `1px solid ${isZoomed ? T.orange : T.border}`,
-          }}
-          onPointerDown={(e) => handlePointerDown(e, 'right')}
-        />
-      </div>
-      {/* Date labels */}
-      <span style={{ fontSize: 8, color: isZoomed ? T.orange : T.dim, fontFamily: T.font, whiteSpace: 'nowrap', minWidth: 110, textAlign: 'right' }}>
-        {isZoomed ? `${fmtDate(zoomStart)} — ${fmtDate(zoomEnd)}` : 'FULL RANGE'}
-      </span>
-      {/* Reset button */}
-      {isZoomed && (
-        <button
-          onClick={() => onChange(0, totalCount - 1)}
-          style={{
-            padding: '1px 6px', fontSize: 8, fontFamily: T.font,
-            background: 'transparent', color: T.dim, cursor: 'pointer',
-            border: `1px solid ${T.border}`, letterSpacing: 0.3,
-          }}
-        >RESET</button>
-      )}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// useZoom — hook for zoom state management
-// ═══════════════════════════════════════════════════════════════
-function useZoom(totalCount) {
-  const [zoomStart, setZoomStart] = useState(0);
-  const [zoomEnd, setZoomEnd] = useState(totalCount - 1);
-  const prevCount = useRef(totalCount);
-
-  // Reset zoom when data length changes (e.g. timeframe switch)
-  useEffect(() => {
-    if (totalCount !== prevCount.current) {
-      setZoomStart(0);
-      setZoomEnd(totalCount - 1);
-      prevCount.current = totalCount;
-    }
-  }, [totalCount]);
-
-  const setZoom = useCallback((s, e) => {
-    setZoomStart(Math.max(0, Math.min(s, totalCount - 2)));
-    setZoomEnd(Math.max(1, Math.min(e, totalCount - 1)));
-  }, [totalCount]);
-
-  return { zoomStart, zoomEnd: Math.min(zoomEnd, totalCount - 1), setZoom };
-}
-
-// ═══════════════════════════════════════════════════════════════
-// TerminalChart — dual-panel SVG (SPX top, indicator bottom)
-// ═══════════════════════════════════════════════════════════════
-function TerminalChart({
-  dates, topValues, bottomValues, topLabel, bottomLabel,
-  signals = [], threshold,
-  topColor = T.bright, bottomColor = T.cyan, height = 340,
-}) {
-  const ref = useRef(null);
-  const [hover, setHover] = useState(null);
-  const [W, setW] = useState(700);
-
-  useEffect(() => {
-    if (!ref.current) return;
-    const ro = new ResizeObserver((e) => { const w = e[0].contentRect.width; if (w > 0) setW(w); });
-    ro.observe(ref.current);
-    return () => ro.disconnect();
-  }, []);
-
-  const n = dates.length;
-  if (n < 2) return <div style={{ color: T.dim, padding: 16, fontSize: 10 }}>NO DATA</div>;
-
-  const pad = { l: 48, r: 8, t: 4, mid: 16, b: 16 };
-  const topH = Math.floor((height - pad.t - pad.mid - pad.b) * 0.55);
-  const botH = Math.floor((height - pad.t - pad.mid - pad.b) * 0.45);
-  const xScale = (i) => pad.l + (i / (n - 1)) * (W - pad.l - pad.r);
-
-  const minMax = (arr) => {
-    const v = arr.filter((x) => x != null && isFinite(x));
-    if (!v.length) return [0, 1];
-    const mn = Math.min(...v), mx = Math.max(...v);
-    const m = (mx - mn) * 0.04 || 1;
-    return [mn - m, mx + m];
-  };
-  const [tMin, tMax] = minMax(topValues);
-  const [bMin, bMax] = minMax(bottomValues);
-  const yTop = (v) => v == null ? null : pad.t + topH - ((v - tMin) / (tMax - tMin)) * topH;
-  const yBot = (v) => v == null ? null : pad.t + topH + pad.mid + botH - ((v - bMin) / (bMax - bMin)) * botH;
-
-  const buildPath = (vals, yFn) => {
-    let p = "";
-    for (let i = 0; i < n; i++) { const y = yFn(vals[i]); if (y == null) continue; p += (p ? "L" : "M") + `${xScale(i).toFixed(1)},${y.toFixed(1)}`; }
-    return p;
-  };
-
-  const topPath = buildPath(topValues, yTop);
-  const botPath = buildPath(bottomValues, yBot);
-  const threshY = threshold != null ? yBot(threshold) : null;
-
-  const sigSet = new Set(signals);
-  const sigPts = [];
-  for (let i = 0; i < n; i++) if (sigSet.has(dates[i])) { const y = yTop(topValues[i]); if (y != null) sigPts.push({ x: xScale(i), y }); }
-
-  const fmtV = (v) => Math.abs(v) >= 1000 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2);
-  const topTicks = [tMin, (tMin + tMax) / 2, tMax].map((v) => ({ y: yTop(v), label: fmtV(v) }));
-  const botTicks = [bMin, (bMin + bMax) / 2, bMax].map((v) => ({ y: yBot(v), label: fmtV(v) }));
-
-  const dateLbls = [];
-  const step = Math.max(1, Math.floor(n / 7));
-  for (let i = 0; i < n; i += step) {
-    dateLbls.push({ x: xScale(i), label: new Date(dates[i]).toLocaleDateString("en-US", { year: "2-digit", month: "short" }) });
-  }
-
-  const handleMouse = (e) => {
-    const r = ref.current?.getBoundingClientRect(); if (!r) return;
-    const idx = Math.round(((e.clientX - r.left - pad.l) / (W - pad.l - pad.r)) * (n - 1));
-    if (idx >= 0 && idx < n) setHover(idx);
-  };
-  const hx = hover != null ? xScale(hover) : null;
-
-  return (
-    <div ref={ref} style={{ position: "relative", width: "100%" }}
-      onMouseMove={handleMouse} onMouseLeave={() => setHover(null)}>
-      <svg width={W} height={height} style={{ display: "block" }}>
-        {topTicks.map((l, i) => <line key={`tg${i}`} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.035)" />)}
-        {botTicks.map((l, i) => <line key={`bg${i}`} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.035)" />)}
-        <line x1={pad.l} x2={W - pad.r} y1={pad.t + topH + pad.mid / 2} y2={pad.t + topH + pad.mid / 2} stroke={T.border} strokeWidth={0.5} />
-        <path d={topPath} fill="none" stroke={topColor} strokeWidth={1} />
-        <path d={botPath} fill="none" stroke={bottomColor} strokeWidth={1} />
-        {threshY != null && <line x1={pad.l} x2={W - pad.r} y1={threshY} y2={threshY} stroke={T.red} strokeWidth={0.6} strokeDasharray="3,3" opacity={0.5} />}
-        {sigPts.map((p, i) => <polygon key={i} points={`${p.x},${p.y - 5} ${p.x - 3.5},${p.y + 1.5} ${p.x + 3.5},${p.y + 1.5}`} fill={T.green} opacity={0.85} />)}
-        {topTicks.map((l, i) => <text key={`tl${i}`} x={pad.l - 4} y={l.y + 3} fill={T.dim} fontSize={8} textAnchor="end" fontFamily={T.font}>{l.label}</text>)}
-        {botTicks.map((l, i) => <text key={`bl${i}`} x={pad.l - 4} y={l.y + 3} fill={T.dim} fontSize={8} textAnchor="end" fontFamily={T.font}>{l.label}</text>)}
-        <text x={pad.l + 4} y={pad.t + 12} fill={T.dim} fontSize={8} fontFamily={T.font} letterSpacing={0.5}>{topLabel}</text>
-        <text x={pad.l + 4} y={pad.t + topH + pad.mid + 12} fill={bottomColor} fontSize={8} fontFamily={T.font} letterSpacing={0.5}>{bottomLabel}</text>
-        {dateLbls.map((l, i) => <text key={i} x={l.x} y={height - 2} fill={T.dim} fontSize={8} textAnchor="middle" fontFamily={T.font}>{l.label}</text>)}
-        {hover != null && <>
-          <line x1={hx} x2={hx} y1={pad.t} y2={height - pad.b} stroke="rgba(255,255,255,0.15)" strokeWidth={0.5} />
-          {yTop(topValues[hover]) != null && <circle cx={hx} cy={yTop(topValues[hover])} r={2.5} fill={topColor} stroke={T.bg} strokeWidth={1} />}
-          {yBot(bottomValues[hover]) != null && <circle cx={hx} cy={yBot(bottomValues[hover])} r={2.5} fill={bottomColor} stroke={T.bg} strokeWidth={1} />}
-        </>}
-      </svg>
-      {hover != null && (
-        <div style={{
-          position: "absolute", left: Math.min(hx + 10, W - 170), top: pad.t,
-          background: "rgba(10,10,12,0.94)", border: `1px solid ${T.borderBright}`,
-          padding: "5px 8px", pointerEvents: "none", zIndex: 10,
-          fontFamily: T.font, fontSize: 9, lineHeight: 1.5,
-        }}>
-          <div style={{ color: T.dim }}>{dates[hover]}</div>
-          <div style={{ color: topColor }}>{topLabel}: {topValues[hover]?.toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
-          <div style={{ color: bottomColor }}>{bottomLabel}: {bottomValues[hover]?.toFixed(3)}</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// CompositeChart
-// ═══════════════════════════════════════════════════════════════
-function CompositeChart({ dates, spx, scores, triggers, height = 420 }) {
-  const ref = useRef(null);
-  const [hover, setHover] = useState(null);
-  const [W, setW] = useState(600);
-
-  useEffect(() => {
-    if (!ref.current) return;
-    const ro = new ResizeObserver((e) => { const w = e[0].contentRect.width; if (w > 0) setW(w); });
-    ro.observe(ref.current);
-    return () => ro.disconnect();
-  }, []);
-
-  const n = dates.length;
-  if (n < 2) return null;
-
-  const pad = { l: 44, r: 32, t: 4, b: 16 };
-  const H = height - pad.t - pad.b;
-  const xS = (i) => pad.l + (i / (n - 1)) * (W - pad.l - pad.r);
-
-  const spxV = spx.filter((v) => v != null && v > 0);
-  const logMin = Math.log(Math.min(...spxV)) - 0.04;
-  const logMax = Math.log(Math.max(...spxV)) + 0.04;
-  const ySpx = (v) => (!v || v <= 0) ? null : pad.t + H - ((Math.log(v) - logMin) / (logMax - logMin)) * H;
-  const barH = (s) => (s / 9) * H;
-
-  let path = "";
-  for (let i = 0; i < n; i++) { const y = ySpx(spx[i]); if (y == null) continue; path += (path ? "L" : "M") + `${xS(i).toFixed(1)},${y.toFixed(1)}`; }
-
-  const trigSet = new Set(triggers);
-  const trigPts = [];
-  for (let i = 0; i < n; i++) if (trigSet.has(dates[i])) { const y = ySpx(spx[i]); if (y != null) trigPts.push({ x: xS(i), y }); }
-
-  const bw = Math.max(1, (W - pad.l - pad.r) / n * 0.8);
-  const spxLbls = [logMin, (logMin + logMax) / 2, logMax].map((lv) => ({
-    y: pad.t + H - ((lv - logMin) / (logMax - logMin)) * H, label: Math.exp(lv).toFixed(0),
-  }));
-  const scLbls = [0, 3, 6, 9].map((s) => ({ y: pad.t + H - barH(s), label: s.toString() }));
-
-  const handleMouse = (e) => {
-    const r = ref.current?.getBoundingClientRect(); if (!r) return;
-    const idx = Math.round(((e.clientX - r.left - pad.l) / (W - pad.l - pad.r)) * (n - 1));
-    if (idx >= 0 && idx < n) setHover(idx);
-  };
-  const hx = hover != null ? xS(hover) : null;
-
-  return (
-    <div ref={ref} style={{ position: "relative", width: "100%" }}
-      onMouseMove={handleMouse} onMouseLeave={() => setHover(null)}>
-      <svg width={W} height={height} style={{ display: "block" }}>
-        {spxLbls.map((l, i) => <line key={i} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.03)" />)}
-        {[3, 6].map((s) => <line key={s} x1={pad.l} x2={W - pad.r} y1={pad.t + H - barH(s)} y2={pad.t + H - barH(s)} stroke="rgba(0,255,136,0.1)" strokeDasharray="2,4" />)}
-        {scores.map((s, i) => s > 0 && <rect key={i} x={xS(i) - bw / 2} y={pad.t + H - barH(s)} width={bw} height={barH(s)} fill="rgba(100,45,0,0.85)" />)}
-        <path d={path} fill="none" stroke={T.bright} strokeWidth={1} />
-        {trigPts.map((p, i) => <polygon key={i} points={`${p.x},${p.y - 5} ${p.x - 3.5},${p.y + 1.5} ${p.x + 3.5},${p.y + 1.5}`} fill={T.green} opacity={0.85} />)}
-        {spxLbls.map((l, i) => <text key={i} x={pad.l - 4} y={l.y + 3} fill={T.dim} fontSize={8} textAnchor="end" fontFamily={T.font}>{l.label}</text>)}
-        {scLbls.map((l, i) => <text key={i} x={W - pad.r + 4} y={l.y + 3} fill={T.green} fontSize={8} textAnchor="start" fontFamily={T.font} opacity={0.5}>{l.label}</text>)}
-        {(() => { const ls = []; const st = Math.max(1, Math.floor(n / 6)); for (let i = 0; i < n; i += st) ls.push(<text key={i} x={xS(i)} y={height - 2} fill={T.dim} fontSize={8} textAnchor="middle" fontFamily={T.font}>{new Date(dates[i]).toLocaleDateString("en-US", { year: "2-digit", month: "short" })}</text>); return ls; })()}
-        {hover != null && <>
-          <line x1={hx} x2={hx} y1={pad.t} y2={pad.t + H} stroke="rgba(255,255,255,0.15)" strokeWidth={0.5} />
-          {ySpx(spx[hover]) != null && <circle cx={hx} cy={ySpx(spx[hover])} r={2.5} fill={T.bright} stroke={T.bg} strokeWidth={1} />}
-        </>}
-      </svg>
-      {hover != null && (
-        <div style={{
-          position: "absolute", left: Math.min(hx + 10, W - 170), top: pad.t,
-          background: "rgba(10,10,12,0.94)", border: `1px solid ${T.borderBright}`,
-          padding: "5px 8px", pointerEvents: "none", zIndex: 10,
-          fontFamily: T.font, fontSize: 9, lineHeight: 1.5,
-        }}>
-          <div style={{ color: T.dim }}>{dates[hover]}</div>
-          <div style={{ color: T.bright }}>SPX: {spx[hover]?.toLocaleString(undefined, { maximumFractionDigits: 1 })}</div>
-          <div style={{ color: T.green }}>SIGNALS: {scores[hover]} / 9</div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Signal Badge
-// ═══════════════════════════════════════════════════════════════
-function SignalBadge({ active }) {
-  const color = active ? T.green : T.dim;
-  const label = active ? "BUY" : "IDLE";
-  return (
-    <span style={{
-      display: "inline-flex", alignItems: "center", justifyContent: "center",
-      width: 44, padding: "2px 0", fontSize: 9, fontWeight: 700,
-      fontFamily: T.font, letterSpacing: 0.5,
-      background: active ? `${T.green}18` : "transparent",
-      color: color,
-      border: `1px solid ${active ? T.green + "55" : T.border}`,
-    }}>{label}</span>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Indicator configs
-// ═══════════════════════════════════════════════════════════════
-const IND_ORDER = [
-  "r3fd", "acwi", "mcclellan", "putcall", "feargreed",
-  "lowry", "zweig", "volcurve", "highs52w",
-];
-const IND_NUMS = {
-  r3fd: "1", acwi: "2", mcclellan: "3", putcall: "4", feargreed: "5",
-  lowry: "6", zweig: "7", volcurve: "8", highs52w: "9",
-};
-const IND_COLORS = {
-  r3fd: T.orange, acwi: T.cyan, mcclellan: T.orange,
-  putcall: T.purple, feargreed: T.amber, lowry: T.red,
-  zweig: T.cyan, volcurve: T.orange, highs52w: T.cyan,
-};
-
-// ═══════════════════════════════════════════════════════════════
-// IndicatorRow — expandable with chart
-// ═══════════════════════════════════════════════════════════════
-function IndicatorRow({ id, indicator, isActive }) {
-  const [expanded, setExpanded] = useState(false);
-  const [tf, setTf] = useState("2Y");
-  const color = IND_COLORS[id] || T.cyan;
-
-  const { dates: slD, arrays: [slSpx, slVal] } = useMemo(
-    () => sliceByTf(indicator.dates, [indicator.spx, indicator.values], tf),
-    [indicator, tf]
-  );
-
-  const { zoomStart, zoomEnd, setZoom } = useZoom(slD.length);
-  const zDates = useMemo(() => slD.slice(zoomStart, zoomEnd + 1), [slD, zoomStart, zoomEnd]);
-  const zSpx = useMemo(() => slSpx.slice(zoomStart, zoomEnd + 1), [slSpx, zoomStart, zoomEnd]);
-  const zVal = useMemo(() => slVal.slice(zoomStart, zoomEnd + 1), [slVal, zoomStart, zoomEnd]);
-
-  return (
-    <div style={{
-      background: expanded ? T.bgCard : "transparent",
-      borderBottom: `1px solid ${T.border}`,
-      transition: "background 0.15s",
-    }}>
-      {/* Header row */}
-      <div onClick={() => setExpanded(!expanded)} style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "7px 8px 7px 0", cursor: "pointer",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{
-            width: 16, height: 16, borderRadius: 2,
-            background: T.border, color: T.text,
-            fontSize: 9, fontWeight: 700, fontFamily: T.font,
-            display: "inline-flex", alignItems: "center", justifyContent: "center",
-          }}>{IND_NUMS[id]}</span>
-          <span style={{
-            fontSize: 10, color: expanded ? T.bright : T.text, fontWeight: 500,
-            letterSpacing: 0.2,
-          }}>{indicator.name}</span>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <SignalBadge active={isActive} />
-          <span style={{ color: T.dim, fontSize: 10 }}>{expanded ? "▾" : "▸"}</span>
-        </div>
-      </div>
-
-      {/* Expanded chart */}
-      {expanded && (
-        <div style={{ padding: "4px 8px 10px" }}>
-          <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 4 }}>
-            <TimeframeBar value={tf} onChange={setTf} count={zDates.length} />
-          </div>
-          <TerminalChart
-            dates={zDates}
-            topValues={zSpx}
-            bottomValues={zVal}
-            topLabel="S&P 500"
-            bottomLabel={indicator.name}
-            signals={indicator.signals}
-            threshold={indicator.threshold}
-            bottomColor={color}
-            height={340}
-          />
-          <ZoomSlider totalCount={slD.length} zoomStart={zoomStart} zoomEnd={zoomEnd} onChange={setZoom} dates={slD} />
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// TitleBar — unified terminal header
-// ═══════════════════════════════════════════════════════════════
-function TitleBar({ fetchedAt, onRefresh, refreshing }) {
-  return (
-    <div style={{
-      display: "flex", alignItems: "center", justifyContent: "space-between",
-      padding: "8px 16px", background: T.bg,
-      borderBottom: `1px solid ${T.border}`,
-    }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-        <span style={{ fontSize: 16, fontWeight: 700, color: T.orange, fontFamily: T.font, letterSpacing: 2 }}>
-          SMALLFISHMACRO
-        </span>
-        <span style={{ fontSize: 12, fontWeight: 400, color: T.dim, fontFamily: T.font, letterSpacing: 1 }}>
-          TERMINAL
-        </span>
-        <span style={{ fontSize: 10, color: T.dim, fontFamily: T.font }}>v1.0</span>
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 9, fontFamily: T.font, color: T.dim }}>
-        <span>{fetchedAt ? new Date(fetchedAt).toLocaleString() : ""}</span>
-        <button onClick={onRefresh} disabled={refreshing} style={{
-          padding: "3px 10px", fontSize: 9, fontFamily: T.font,
-          border: `1px solid ${T.border}`, background: "transparent",
-          color: T.dim, cursor: "pointer", letterSpacing: 0.5,
-        }}>{refreshing ? "..." : "REFRESH"}</button>
-      </div>
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// NavBar — top-level tab navigation (unified across terminal)
-// ═══════════════════════════════════════════════════════════════
-const NAV_TABS = ["DASHBOARD", "BUY THE DIP", "MARKET RISK", "OVERVIEW", "STRATEGY MAP"];
-
-function NavBar({ active }) {
-  return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 0,
-      borderBottom: `1px solid ${T.border}`, background: T.bg, padding: "0 16px",
-    }}>
-      {NAV_TABS.map((tab) => {
-        const isActive = tab === active;
-        return (
-          <div key={tab} style={{
-            padding: "8px 16px", fontSize: 11, fontWeight: isActive ? 700 : 400,
-            fontFamily: T.font, color: isActive ? T.orange : T.dim,
-            borderBottom: isActive ? `2px solid ${T.orange}` : "2px solid transparent",
-            cursor: "pointer", letterSpacing: 0.8,
-          }}>{tab}</div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// SubTabs — secondary navigation below page title
-// ═══════════════════════════════════════════════════════════════
-function SubTabs({ tabs, active, onChange }) {
-  return (
-    <div style={{
-      display: "flex", gap: 0, borderBottom: `1px solid ${T.border}`,
-    }}>
-      {tabs.map((tab) => {
-        const isActive = tab === active;
-        return (
-          <div key={tab} onClick={() => onChange(tab)} style={{
-            padding: "8px 18px", fontSize: 11, fontWeight: isActive ? 600 : 400,
-            fontFamily: T.font, letterSpacing: 0.8, cursor: "pointer",
-            color: isActive ? T.white : T.dim,
-            borderBottom: isActive ? `2px solid ${T.white}` : "2px solid transparent",
-            marginBottom: -1,
-          }}>{tab}</div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// Helper
-// ═══════════════════════════════════════════════════════════════
-function isSignalActive(ind) {
-  if (!ind.signals || ind.signals.length === 0) return false;
-  const last = ind.signals[ind.signals.length - 1];
-  const lastDate = new Date(last);
-  const now = new Date();
-  const diffDays = (now - lastDate) / (1000 * 60 * 60 * 24);
-  return diffDays <= 10;
-}
-
-// ═══════════════════════════════════════════════════════════════
-// InfoBox — descriptive box (matches Cross-Asset orange border)
+// Shared components
 // ═══════════════════════════════════════════════════════════════
 function InfoBox({ children }) {
   return (
-    <div style={{
-      padding: "6px 10px", margin: "6px 8px", fontSize: 9, lineHeight: 1.6,
-      fontFamily: T.font, color: T.text,
-      background: "rgba(255,159,67,0.04)",
-      border: `1px solid ${T.orange}33`,
-    }}>{children}</div>
+    <div style={{ padding: "6px 10px", margin: "6px 8px", fontSize: 9, lineHeight: 1.6,
+      fontFamily: T.font, color: T.text, background: "rgba(255,159,67,0.04)",
+      border: `1px solid ${T.orange}33` }}>{children}</div>
   );
 }
 
-// ═══════════════════════════════════════════════════════════════
-// ButtonStrip — reusable control strip (Cross-Asset style)
-// ═══════════════════════════════════════════════════════════════
+function TimeframeBar({ value, onChange, style: s }) {
+  return (
+    <div style={{ display: "flex", gap: 0, alignItems: "center", ...s }}>
+      <span style={{ color: T.dim, fontSize: 9, fontFamily: T.font, letterSpacing: 0.5, marginRight: 6 }}>RANGE:</span>
+      {TF_LIST.map((t) => {
+        const a = value === t;
+        return (<button key={t} onClick={() => onChange(t)} style={{
+          padding: "3px 8px", fontSize: 9, fontWeight: a ? 700 : 400, fontFamily: T.font,
+          cursor: "pointer", letterSpacing: 0.3, borderRadius: 0,
+          background: a ? T.orange : "transparent", color: a ? "#000" : T.dim,
+          border: `1px solid ${a ? T.orange : T.border}`, marginLeft: -1,
+        }}>{t}</button>);
+      })}
+    </div>
+  );
+}
+
 function ButtonStrip({ label, options, value, onChange }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 0 }}>
       <span style={{ color: T.dim, fontSize: 9, fontFamily: T.font, letterSpacing: 0.5, marginRight: 6 }}>{label}:</span>
       {options.map((o) => {
         const val = typeof o === "object" ? o.value : o;
-        const lbl = typeof o === "object" ? o.label : o;
-        const isActive = value === val;
-        return (
-          <button key={val} onClick={() => onChange(val)} style={{
-            padding: "3px 8px", fontSize: 9, fontWeight: isActive ? 700 : 400,
-            fontFamily: T.font, cursor: "pointer", letterSpacing: 0.3, borderRadius: 0,
-            background: isActive ? T.orange : "transparent",
-            color: isActive ? "#000" : T.dim,
-            border: `1px solid ${isActive ? T.orange : T.border}`,
-            marginLeft: -1,
-          }}>{lbl}</button>
-        );
+        const lbl = typeof o === "object" ? o.label : String(o);
+        const a = value === val;
+        return (<button key={val} onClick={() => onChange(val)} style={{
+          padding: "3px 8px", fontSize: 9, fontWeight: a ? 700 : 400, fontFamily: T.font,
+          cursor: "pointer", letterSpacing: 0.3, borderRadius: 0,
+          background: a ? T.orange : "transparent", color: a ? "#000" : T.dim,
+          border: `1px solid ${a ? T.orange : T.border}`, marginLeft: -1,
+        }}>{lbl}</button>);
       })}
+    </div>
+  );
+}
+
+function StatCell({ label, value, color }) {
+  return (
+    <div style={{ padding: "8px 10px", background: T.bgPanel, border: `1px solid ${T.border}`, flex: "1 1 0" }}>
+      <div style={{ fontSize: 8, color: T.dim, letterSpacing: 0.8, marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 14, fontWeight: 700, color: color || T.bright }}>{value}</div>
+    </div>
+  );
+}
+
+function TitleBar({ fetchedAt, onRefresh, refreshing }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+      padding: "8px 16px", background: T.bg, borderBottom: `1px solid ${T.border}` }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+        <span style={{ fontSize: 16, fontWeight: 700, color: T.orange, fontFamily: T.font, letterSpacing: 2 }}>SMALLFISHMACRO</span>
+        <span style={{ fontSize: 12, color: T.dim, fontFamily: T.font, letterSpacing: 1 }}>TERMINAL</span>
+        <span style={{ fontSize: 10, color: T.dim, fontFamily: T.font }}>v1.0</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 9, fontFamily: T.font, color: T.dim }}>
+        <span>{fetchedAt ? new Date(fetchedAt).toLocaleString() : ""}</span>
+        <button onClick={onRefresh} disabled={refreshing} style={{
+          padding: "3px 10px", fontSize: 9, fontFamily: T.font, border: `1px solid ${T.border}`,
+          background: "transparent", color: T.dim, cursor: "pointer", letterSpacing: 0.5,
+        }}>{refreshing ? "..." : "REFRESH"}</button>
+      </div>
+    </div>
+  );
+}
+
+const NAV_TABS = ["DASHBOARD", "BUY THE DIP", "MARKET RISK", "OVERVIEW", "STRATEGY MAP"];
+function NavBar({ active }) {
+  return (
+    <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${T.border}`, background: T.bg, padding: "0 16px" }}>
+      {NAV_TABS.map((tab) => {
+        const a = tab === active;
+        return (<div key={tab} style={{ padding: "8px 16px", fontSize: 11, fontWeight: a ? 700 : 400,
+          fontFamily: T.font, color: a ? T.orange : T.dim,
+          borderBottom: a ? `2px solid ${T.orange}` : "2px solid transparent",
+          cursor: "pointer", letterSpacing: 0.8 }}>{tab}</div>);
+      })}
+    </div>
+  );
+}
+
+function SubTabs({ tabs, active, onChange }) {
+  return (
+    <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${T.border}` }}>
+      {tabs.map((tab) => {
+        const a = tab === active;
+        return (<div key={tab} onClick={() => onChange(tab)} style={{
+          padding: "8px 18px", fontSize: 11, fontWeight: a ? 600 : 400,
+          fontFamily: T.font, letterSpacing: 0.8, cursor: "pointer",
+          color: a ? T.white : T.dim, borderBottom: a ? `2px solid ${T.white}` : "2px solid transparent",
+          marginBottom: -1 }}>{tab}</div>);
+      })}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ZoomSlider — dual-thumb range slider for chart zooming
+// ═══════════════════════════════════════════════════════════════
+const sliderThumbCss = `
+input[type=range].zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 10px; height: 16px; background: #ff9f43; border: none;
+  border-radius: 2px; cursor: pointer; margin-top: -6px;
+}
+input[type=range].zoom-slider::-moz-range-thumb {
+  width: 10px; height: 16px; background: #ff9f43; border: none;
+  border-radius: 2px; cursor: pointer;
+}
+input[type=range].zoom-slider::-webkit-slider-runnable-track {
+  height: 4px; background: #1c1c24; border-radius: 2px;
+}
+input[type=range].zoom-slider::-moz-range-track {
+  height: 4px; background: #1c1c24; border-radius: 2px;
+}
+`;
+
+function ZoomSlider({ totalLength, zoomStart, zoomEnd, onChange }) {
+  if (totalLength < 10) return null;
+  const handleStart = (e) => {
+    const v = Number(e.target.value);
+    if (v < zoomEnd - 5) onChange(v, zoomEnd);
+  };
+  const handleEnd = (e) => {
+    const v = Number(e.target.value);
+    if (v > zoomStart + 5) onChange(zoomStart, v);
+  };
+  const pctL = (zoomStart / totalLength) * 100;
+  const pctR = (zoomEnd / totalLength) * 100;
+  return (
+    <div style={{ padding: "4px 8px 6px", position: "relative" }}>
+      <style>{sliderThumbCss}</style>
+      <div style={{ position: "relative", height: 16, marginLeft: 44, marginRight: 0 }}>
+        {/* Highlight bar */}
+        <div style={{
+          position: "absolute", top: 6, height: 4, borderRadius: 2,
+          left: `${pctL}%`, right: `${100 - pctR}%`,
+          background: `${T.orange}55`,
+        }} />
+        <input type="range" className="zoom-slider" min={0} max={totalLength} value={zoomStart}
+          onChange={handleStart}
+          style={{ position: "absolute", top: 0, left: 0, width: "100%", height: 16,
+            WebkitAppearance: "none", appearance: "none", background: "transparent",
+            pointerEvents: "none", zIndex: 2, margin: 0, padding: 0 }}
+        />
+        <input type="range" className="zoom-slider" min={0} max={totalLength} value={zoomEnd}
+          onChange={handleEnd}
+          style={{ position: "absolute", top: 0, left: 0, width: "100%", height: 16,
+            WebkitAppearance: "none", appearance: "none", background: "transparent",
+            pointerEvents: "none", zIndex: 3, margin: 0, padding: 0 }}
+        />
+        {/* Make thumbs clickable */}
+        <style>{`
+          input[type=range].zoom-slider { pointer-events: none; }
+          input[type=range].zoom-slider::-webkit-slider-thumb { pointer-events: auto; }
+          input[type=range].zoom-slider::-moz-range-thumb { pointer-events: auto; }
+        `}</style>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Helpers: convert dates array to timestamps for time-based x
+// ═══════════════════════════════════════════════════════════════
+function datesToTimestamps(dates) {
+  return dates.map((d) => new Date(d).getTime());
+}
+
+function makeTimeXScale(timestamps, padL, padR, W) {
+  const tMin = timestamps[0];
+  const tMax = timestamps[timestamps.length - 1];
+  const range = tMax - tMin || 1;
+  const plotW = W - padL - padR;
+  return (ts) => padL + ((ts - tMin) / range) * plotW;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RegimeChart — SPX line (white) with colored background bands
+// ═══════════════════════════════════════════════════════════════
+function RegimeChart({ dates, spx, trend, indicator, indLabel, height = 420 }) {
+  const ref = useRef(null);
+  const [hover, setHover] = useState(null);
+  const [W, setW] = useState(700);
+  const [zoomStart, setZoomStart] = useState(0);
+  const [zoomEnd, setZoomEnd] = useState(dates.length);
+
+  useEffect(() => {
+    setZoomStart(0);
+    setZoomEnd(dates.length);
+  }, [dates.length]);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const ro = new ResizeObserver((e) => { const w = e[0].contentRect.width; if (w > 0) setW(w); });
+    ro.observe(ref.current); return () => ro.disconnect();
+  }, []);
+
+  const totalN = dates.length;
+  if (totalN < 2) return <div style={{ color: T.dim, padding: 16, fontSize: 10 }}>NO DATA</div>;
+
+  // Apply zoom window
+  const zs = Math.max(0, Math.min(zoomStart, totalN - 2));
+  const ze = Math.max(zs + 2, Math.min(zoomEnd, totalN));
+  const zDates = dates.slice(zs, ze);
+  const zSpx = spx.slice(zs, ze);
+  const zTrend = trend.slice(zs, ze);
+  const zIndicator = indicator ? indicator.slice(zs, ze) : null;
+  const n = zDates.length;
+
+  const hasInd = zIndicator != null;
+  const pad = { l: 52, r: 8, t: 8, mid: hasInd ? 14 : 0, b: 18 };
+  const topH = hasInd ? Math.floor((height - pad.t - pad.mid - pad.b) * 0.6) : height - pad.t - pad.b;
+  const botH = hasInd ? height - pad.t - topH - pad.mid - pad.b : 0;
+
+  // Time-based x scale
+  const timestamps = datesToTimestamps(zDates);
+  const xS = makeTimeXScale(timestamps, pad.l, pad.r, W);
+
+  // SPX log scale
+  const spxV = zSpx.filter((v) => v > 0);
+  if (spxV.length < 1) return <div style={{ color: T.dim, padding: 16, fontSize: 10 }}>NO DATA</div>;
+  const logMin = Math.log(Math.min(...spxV)) - 0.04;
+  const logMax = Math.log(Math.max(...spxV)) + 0.04;
+  const ySpx = (v) => (!v || v <= 0) ? null : pad.t + topH - ((Math.log(v) - logMin) / (logMax - logMin)) * topH;
+
+  // Build background regime bands
+  const buildBands = () => {
+    const bands = [];
+    let startIdx = 0;
+    let curRegime = zTrend[0];
+    for (let i = 1; i <= n; i++) {
+      if (i === n || zTrend[i] !== curRegime) {
+        const x1 = xS(timestamps[startIdx]);
+        const x2 = i < n ? xS(timestamps[i]) : xS(timestamps[n - 1]);
+        bands.push({
+          x: x1, width: Math.max(0, x2 - x1),
+          color: curRegime === 1 ? T.green : T.red,
+        });
+        if (i < n) {
+          startIdx = i;
+          curRegime = zTrend[i];
+        }
+      }
+    }
+    return bands;
+  };
+  const bands = buildBands();
+
+  // Build single white price line
+  let pricePath = "";
+  for (let i = 0; i < n; i++) {
+    const y = ySpx(zSpx[i]);
+    if (y == null) continue;
+    pricePath += (pricePath ? "L" : "M") + `${xS(timestamps[i]).toFixed(1)},${y.toFixed(1)}`;
+  }
+
+  // Indicator bottom panel
+  let indMin = 0, indMax = 100, yInd = () => null;
+  if (hasInd) {
+    const iv = zIndicator.filter((v) => v != null && isFinite(v));
+    indMin = Math.min(...iv); indMax = Math.max(...iv);
+    const m = (indMax - indMin) * 0.05 || 1;
+    indMin -= m; indMax += m;
+    yInd = (v) => v == null ? null : pad.t + topH + pad.mid + botH - ((v - indMin) / (indMax - indMin)) * botH;
+  }
+  let indPath = "";
+  if (hasInd) {
+    for (let i = 0; i < n; i++) {
+      const y = yInd(zIndicator[i]);
+      if (y == null) continue;
+      indPath += (indPath ? "L" : "M") + `${xS(timestamps[i]).toFixed(1)},${y.toFixed(1)}`;
+    }
+  }
+
+  // Labels
+  const spxTicks = [logMin, (logMin + logMax) / 2, logMax].map((lv) => ({
+    y: pad.t + topH - ((lv - logMin) / (logMax - logMin)) * topH, label: Math.exp(lv).toFixed(0)
+  }));
+  const dateLbls = [];
+  const step = Math.max(1, Math.floor(n / 6));
+  for (let i = 0; i < n; i += step) dateLbls.push({ x: xS(timestamps[i]), label: new Date(zDates[i]).toLocaleDateString("en-US", { year: "2-digit", month: "short" }) });
+
+  const handleMouse = (e) => {
+    const r = ref.current?.getBoundingClientRect(); if (!r) return;
+    const mouseX = e.clientX - r.left;
+    // Find closest data point by x position
+    let bestIdx = 0, bestDist = Infinity;
+    for (let i = 0; i < n; i++) {
+      const dist = Math.abs(xS(timestamps[i]) - mouseX);
+      if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+    }
+    setHover(bestIdx);
+  };
+  const hx = hover != null ? xS(timestamps[hover]) : null;
+
+  return (
+    <div>
+      <div ref={ref} style={{ position: "relative", width: "100%" }}
+        onMouseMove={handleMouse} onMouseLeave={() => setHover(null)}>
+        <svg width={W} height={height} style={{ display: "block" }}>
+          {/* Background regime bands */}
+          {bands.map((b, i) => (
+            <rect key={i} x={b.x} y={pad.t} width={b.width} height={topH}
+              fill={b.color} opacity={0.08} />
+          ))}
+          {spxTicks.map((l, i) => <line key={i} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.03)" />)}
+          {/* White price line */}
+          <path d={pricePath} fill="none" stroke={T.white} strokeWidth={1.2} />
+          {hasInd && <line x1={pad.l} x2={W - pad.r} y1={pad.t + topH + pad.mid / 2} y2={pad.t + topH + pad.mid / 2} stroke={T.border} strokeWidth={0.5} />}
+          {hasInd && <path d={indPath} fill="none" stroke={T.orange} strokeWidth={1} />}
+          {hasInd && indLabel && <text x={pad.l + 4} y={pad.t + topH + pad.mid + 12} fill={T.orange} fontSize={8} fontFamily={T.font}>{indLabel}</text>}
+          {spxTicks.map((l, i) => <text key={i} x={pad.l - 4} y={l.y + 3} fill={T.dim} fontSize={8} textAnchor="end" fontFamily={T.font}>{l.label}</text>)}
+          <text x={pad.l + 4} y={pad.t + 12} fill={T.dim} fontSize={8} fontFamily={T.font}>S&P 500 (log)</text>
+          {dateLbls.map((l, i) => <text key={i} x={l.x} y={height - 2} fill={T.dim} fontSize={8} textAnchor="middle" fontFamily={T.font}>{l.label}</text>)}
+          {hover != null && <>
+            <line x1={hx} x2={hx} y1={pad.t} y2={height - pad.b} stroke="rgba(255,255,255,0.15)" strokeWidth={0.5} />
+            {ySpx(zSpx[hover]) != null && <circle cx={hx} cy={ySpx(zSpx[hover])} r={2.5} fill={T.white} stroke={T.bg} strokeWidth={1} />}
+          </>}
+        </svg>
+        {hover != null && (
+          <div style={{ position: "absolute", left: Math.min(hx + 10, W - 180), top: pad.t,
+            background: "rgba(10,10,12,0.94)", border: `1px solid ${T.borderBright}`,
+            padding: "5px 8px", pointerEvents: "none", zIndex: 10, fontFamily: T.font, fontSize: 9, lineHeight: 1.5 }}>
+            <div style={{ color: T.dim }}>{zDates[hover]}</div>
+            <div style={{ color: T.bright }}>SPX: {zSpx[hover]?.toLocaleString(undefined, { maximumFractionDigits: 1 })}</div>
+            <div style={{ color: zTrend[hover] === 1 ? T.green : T.red }}>{zTrend[hover] === 1 ? "BULL" : "BEAR"}</div>
+            {hasInd && zIndicator[hover] != null && <div style={{ color: T.orange }}>{indLabel}: {zIndicator[hover]?.toFixed(1)}</div>}
+          </div>
+        )}
+      </div>
+      <ZoomSlider totalLength={totalN} zoomStart={zoomStart} zoomEnd={zoomEnd}
+        onChange={(s, e) => { setZoomStart(s); setZoomEnd(e); }} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Signal badge (Long/Short)
+// ═══════════════════════════════════════════════════════════════
+function SignalBadge({ value }) {
+  if (value === 1) return <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center",
+    width: 48, padding: "2px 0", fontSize: 9, fontWeight: 700, fontFamily: T.font, letterSpacing: 0.5,
+    background: `${T.green}18`, color: T.green, border: `1px solid ${T.green}55` }}>LONG</span>;
+  if (value === 0) return <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center",
+    width: 48, padding: "2px 0", fontSize: 9, fontWeight: 700, fontFamily: T.font, letterSpacing: 0.5,
+    background: `${T.red}18`, color: T.red, border: `1px solid ${T.red}55` }}>SHORT</span>;
+  return <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center",
+    width: 48, padding: "2px 0", fontSize: 9, fontWeight: 700, fontFamily: T.font, color: T.dim,
+    border: `1px solid ${T.border}` }}>—</span>;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// IndicatorRow — expandable
+// ═══════════════════════════════════════════════════════════════
+function IndicatorRow({ ind, index }) {
+  const [expanded, setExpanded] = useState(false);
+  const [tf, setTf] = useState("2Y");
+  const hasDates = ind.dates && ind.dates.length > 1;
+
+  const sliced = useMemo(() => {
+    if (!hasDates) return null;
+    return sliceByTf(ind.dates, [ind.spx, ind.trend], tf);
+  }, [ind, tf, hasDates]);
+
+  return (
+    <div style={{ background: expanded ? T.bgCard : "transparent", borderBottom: `1px solid ${T.border}` }}>
+      <div onClick={() => setExpanded(!expanded)} style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "7px 8px 7px 0", cursor: "pointer" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ width: 18, height: 16, borderRadius: 2, background: T.border, color: T.text,
+            fontSize: 8, fontWeight: 700, fontFamily: T.font,
+            display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{index}</span>
+          <span style={{ fontSize: 10, color: expanded ? T.bright : T.text, fontWeight: 500, letterSpacing: 0.2 }}>{ind.name}</span>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {ind.lastChange && <span style={{ fontSize: 8, color: T.dim }}>{ind.lastChange}</span>}
+          <SignalBadge value={ind.status} />
+          <span style={{ color: T.dim, fontSize: 10 }}>{expanded ? "▾" : "▸"}</span>
+        </div>
+      </div>
+      {expanded && hasDates && sliced && (
+        <div style={{ padding: "4px 8px 10px" }}>
+          <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 4 }}>
+            <TimeframeBar value={tf} onChange={setTf} />
+          </div>
+          <RegimeChart dates={sliced.dates} spx={sliced.arrays[0]} trend={sliced.arrays[1]} height={300} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EquityCurveChart — orange strategy + drawdown subplot
+// ═══════════════════════════════════════════════════════════════
+function EquityCurveChart({ dates, strategy, buyHold, height = 480 }) {
+  const ref = useRef(null);
+  const [hover, setHover] = useState(null);
+  const [W, setW] = useState(600);
+  const [zoomStart, setZoomStart] = useState(0);
+  const [zoomEnd, setZoomEnd] = useState(dates.length);
+
+  useEffect(() => {
+    setZoomStart(0);
+    setZoomEnd(dates.length);
+  }, [dates.length]);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    const ro = new ResizeObserver((e) => { const w = e[0].contentRect.width; if (w > 0) setW(w); });
+    ro.observe(ref.current); return () => ro.disconnect();
+  }, []);
+
+  const totalN = dates.length;
+  if (totalN < 2) return null;
+
+  // Apply zoom
+  const zs = Math.max(0, Math.min(zoomStart, totalN - 2));
+  const ze = Math.max(zs + 2, Math.min(zoomEnd, totalN));
+  const zDates = dates.slice(zs, ze);
+  const zStrategy = strategy.slice(zs, ze);
+  const zBuyHold = buyHold.slice(zs, ze);
+  const n = zDates.length;
+
+  const pad = { l: 52, r: 8, t: 12, mid: 12, b: 20 };
+  const eqH = Math.floor((height - pad.t - pad.mid - pad.b) * 0.65);
+  const ddH = height - pad.t - eqH - pad.mid - pad.b;
+
+  // Time-based x
+  const timestamps = datesToTimestamps(zDates);
+  const xS = makeTimeXScale(timestamps, pad.l, pad.r, W);
+
+  // Equity y scale
+  const allVals = [...zStrategy, ...zBuyHold].filter((v) => v != null && isFinite(v));
+  const mn = Math.min(...allVals) * 0.98, mx = Math.max(...allVals) * 1.02;
+  const yS = (v) => (v == null || !isFinite(v)) ? null : pad.t + eqH - ((v - mn) / (mx - mn)) * eqH;
+
+  // Compute drawdown arrays
+  const computeDD = (vals) => {
+    const dd = [];
+    let peak = 0;
+    for (const v of vals) {
+      if (v != null && v > peak) peak = v;
+      dd.push(peak > 0 ? (v - peak) / peak : 0);
+    }
+    return dd;
+  };
+  const stratDD = computeDD(zStrategy);
+  const bhDD = computeDD(zBuyHold);
+
+  // Drawdown y scale
+  const allDD = [...stratDD, ...bhDD].filter((v) => v != null && isFinite(v));
+  const ddMin = Math.min(0, Math.min(...allDD)) * 1.05;
+  const ddMax = 0;
+  const ddTop = pad.t + eqH + pad.mid;
+  const yDD = (v) => (v == null || !isFinite(v)) ? null : ddTop + ddH - ((v - ddMin) / (ddMax - ddMin || 1)) * ddH;
+
+  const buildPath = (vals, yFn) => {
+    let p = "";
+    for (let i = 0; i < n; i++) {
+      const y = yFn(vals[i]);
+      if (y == null) continue;
+      p += (p ? "L" : "M") + `${xS(timestamps[i]).toFixed(1)},${y.toFixed(1)}`;
+    }
+    return p;
+  };
+
+  // Build filled area path for drawdowns
+  const buildAreaPath = (vals, yFn) => {
+    let points = [];
+    for (let i = 0; i < n; i++) {
+      const y = yFn(vals[i]);
+      if (y == null) continue;
+      points.push({ x: xS(timestamps[i]), y });
+    }
+    if (points.length < 2) return "";
+    const baseline = yFn(0);
+    let p = `M${points[0].x.toFixed(1)},${baseline.toFixed(1)}`;
+    for (const pt of points) p += `L${pt.x.toFixed(1)},${pt.y.toFixed(1)}`;
+    p += `L${points[points.length - 1].x.toFixed(1)},${baseline.toFixed(1)}Z`;
+    return p;
+  };
+
+  const eqTicks = [mn, (mn + mx) / 2, mx].map((v) => ({ y: yS(v), label: v.toFixed(0) }));
+  const ddTicks = [ddMin, ddMin / 2, 0].map((v) => ({ y: yDD(v), label: `${(v * 100).toFixed(0)}%` }));
+
+  const dateLbls = [];
+  const step = Math.max(1, Math.floor(n / 6));
+  for (let i = 0; i < n; i += step) dateLbls.push({ x: xS(timestamps[i]), label: new Date(zDates[i]).toLocaleDateString("en-US", { year: "2-digit", month: "short" }) });
+
+  const handleMouse = (e) => {
+    const r = ref.current?.getBoundingClientRect(); if (!r) return;
+    const mouseX = e.clientX - r.left;
+    let bestIdx = 0, bestDist = Infinity;
+    for (let i = 0; i < n; i++) {
+      const dist = Math.abs(xS(timestamps[i]) - mouseX);
+      if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+    }
+    setHover(bestIdx);
+  };
+  const hx = hover != null ? xS(timestamps[hover]) : null;
+
+  const stratReturn = zStrategy.length >= 2 ? (zStrategy[zStrategy.length - 1] / zStrategy[0] - 1) * 100 : 0;
+  const bhReturn = zBuyHold.length >= 2 ? (zBuyHold[zBuyHold.length - 1] / zBuyHold[0] - 1) * 100 : 0;
+
+  return (
+    <div>
+      <div ref={ref} style={{ position: "relative", width: "100%" }} onMouseMove={handleMouse} onMouseLeave={() => setHover(null)}>
+        <div style={{ padding: "0 8px 2px", display: "flex", gap: 16, fontSize: 9, color: T.dim }}>
+          <span>— <span style={{ color: T.orange }}>STRATEGY</span> {stratReturn >= 0 ? "+" : ""}{stratReturn.toFixed(1)}%</span>
+          <span>— <span style={{ color: T.dim }}>BUY & HOLD</span> {bhReturn >= 0 ? "+" : ""}{bhReturn.toFixed(1)}%</span>
+        </div>
+        <svg width={W} height={height} style={{ display: "block" }}>
+          {/* Equity curve area */}
+          {eqTicks.map((l, i) => <line key={i} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.03)" />)}
+          {yS(100) != null && <line x1={pad.l} x2={W - pad.r} y1={yS(100)} y2={yS(100)} stroke="rgba(255,255,255,0.08)" strokeDasharray="3,4" />}
+          <path d={buildPath(zBuyHold, yS)} fill="none" stroke={T.dim} strokeWidth={1} opacity={0.5} />
+          <path d={buildPath(zStrategy, yS)} fill="none" stroke={T.orange} strokeWidth={1.4} />
+          {eqTicks.map((l, i) => <text key={i} x={pad.l - 4} y={l.y + 3} fill={T.dim} fontSize={8} textAnchor="end" fontFamily={T.font}>{l.label}</text>)}
+
+          {/* Separator */}
+          <line x1={pad.l} x2={W - pad.r} y1={pad.t + eqH + pad.mid / 2} y2={pad.t + eqH + pad.mid / 2} stroke={T.border} strokeWidth={0.5} />
+
+          {/* Drawdown subplot */}
+          <text x={pad.l + 4} y={ddTop + 10} fill={T.dim} fontSize={8} fontFamily={T.font}>DRAWDOWN</text>
+          {ddTicks.map((l, i) => <line key={`dd${i}`} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.03)" />)}
+          <path d={buildAreaPath(bhDD, yDD)} fill={`${T.dim}15`} stroke="none" />
+          <path d={buildPath(bhDD, yDD)} fill="none" stroke={T.dim} strokeWidth={0.7} opacity={0.5} />
+          <path d={buildAreaPath(stratDD, yDD)} fill={`${T.orange}15`} stroke="none" />
+          <path d={buildPath(stratDD, yDD)} fill="none" stroke={T.orange} strokeWidth={0.9} />
+          {ddTicks.map((l, i) => <text key={`ddt${i}`} x={pad.l - 4} y={l.y + 3} fill={T.dim} fontSize={8} textAnchor="end" fontFamily={T.font}>{l.label}</text>)}
+
+          {/* Date labels */}
+          {dateLbls.map((l, i) => <text key={i} x={l.x} y={height - 4} fill={T.dim} fontSize={8} textAnchor="middle" fontFamily={T.font}>{l.label}</text>)}
+
+          {/* Hover */}
+          {hover != null && <>
+            <line x1={hx} x2={hx} y1={pad.t} y2={height - pad.b} stroke="rgba(255,255,255,0.15)" strokeWidth={0.5} />
+            {yS(zStrategy[hover]) != null && <circle cx={hx} cy={yS(zStrategy[hover])} r={2.5} fill={T.orange} stroke={T.bg} strokeWidth={1} />}
+            {yDD(stratDD[hover]) != null && <circle cx={hx} cy={yDD(stratDD[hover])} r={2} fill={T.orange} stroke={T.bg} strokeWidth={1} />}
+          </>}
+        </svg>
+        {hover != null && (
+          <div style={{ position: "absolute", left: Math.min(hx + 10, W - 200), top: pad.t,
+            background: "rgba(10,10,12,0.94)", border: `1px solid ${T.borderBright}`,
+            padding: "5px 8px", pointerEvents: "none", zIndex: 10, fontFamily: T.font, fontSize: 9, lineHeight: 1.5 }}>
+            <div style={{ color: T.dim }}>{zDates[hover]}</div>
+            <div style={{ color: T.orange }}>Strategy: {zStrategy[hover]?.toFixed(1)}</div>
+            <div style={{ color: T.text }}>Buy & Hold: {zBuyHold[hover]?.toFixed(1)}</div>
+            <div style={{ color: T.orange, borderTop: `1px solid ${T.border}`, marginTop: 2, paddingTop: 2 }}>
+              Strat DD: {(stratDD[hover] * 100).toFixed(1)}%
+            </div>
+            <div style={{ color: T.dim }}>B&H DD: {(bhDD[hover] * 100).toFixed(1)}%</div>
+          </div>
+        )}
+      </div>
+      <ZoomSlider totalLength={totalN} zoomStart={zoomStart} zoomEnd={zoomEnd}
+        onChange={(s, e) => { setZoomStart(s); setZoomEnd(e); }} />
     </div>
   );
 }
@@ -662,279 +620,216 @@ function ButtonStrip({ label, options, value, onChange }) {
 // ═══════════════════════════════════════════════════════════════
 // Backtest computation
 // ═══════════════════════════════════════════════════════════════
-const HORIZONS = [
-  { key: "1W", days: 5 },
-  { key: "1M", days: 21 },
-  { key: "3M", days: 63 },
-  { key: "6M", days: 126 },
-  { key: "1Y", days: 252 },
+const BT_HORIZONS = [
+  { key: "1M", days: 21 }, { key: "3M", days: 63 }, { key: "6M", days: 126 }, { key: "1Y", days: 252 }, { key: "3Y", days: 756 },
 ];
 
-function computeBacktest(composite, minScore, holdDays, dateRange) {
-  if (!composite?.dates?.length) return null;
+function computeBacktest(data, model, threshold, dateRange) {
+  if (!data) return null;
+  const src = model === "THM" ? data.thm : data.lt;
+  if (!src?.dates?.length) return null;
 
-  const { dates, scores, spx } = composite;
+  const { dates, spx, trend, composite } = src;
   const n = dates.length;
 
-  // Date range filter
+  // Apply date range
   const cutoff = tfCutoff(dateRange);
   const cutStr = cutoff ? cutoff.toISOString().split("T")[0] : null;
-  const startIdx = cutStr ? dates.findIndex((d) => d >= cutStr) : 0;
-  const si = Math.max(0, startIdx);
+  const si = cutStr ? Math.max(0, dates.findIndex((d) => d >= cutStr)) : 0;
 
-  // Find triggers where score >= minScore with 5-day cooldown
-  const triggers = [];
-  let lastTrigIdx = -Infinity;
+  // Build bull signal based on threshold
+  const bull = [];
   for (let i = si; i < n; i++) {
-    if (scores[i] >= minScore && spx[i] > 0) {
-      if (i - lastTrigIdx > 5) {
-        triggers.push(i);
-        lastTrigIdx = i;
-      }
+    if (model === "THM") {
+      bull.push(composite[i] != null && composite[i] > threshold ? 1 : 0);
+    } else {
+      bull.push(composite[i] != null && composite[i] >= threshold ? 1 : 0);
     }
   }
+  const slDates = dates.slice(si);
+  const slSpx = spx.slice(si);
+  const m = bull.length;
 
-  // Forward returns for each trigger at all horizons
-  const trades = triggers.map((idx) => {
-    const entry = spx[idx];
+  // Find regime entries (bear→bull transitions)
+  const entries = [];
+  for (let i = 1; i < m; i++) {
+    if (bull[i] === 1 && bull[i - 1] === 0 && slSpx[i] > 0) entries.push(i);
+  }
+
+  // Forward returns from each entry
+  const trades = entries.map((idx) => {
+    const entry = slSpx[idx];
     const fwd = {};
-    for (const h of HORIZONS) {
-      const exitIdx = idx + h.days;
-      if (exitIdx < n && spx[exitIdx] > 0) {
-        fwd[h.key] = (spx[exitIdx] - entry) / entry;
-      } else {
-        fwd[h.key] = null;
-      }
+    for (const h of BT_HORIZONS) {
+      const ei = idx + h.days;
+      fwd[h.key] = (ei < m && slSpx[ei] > 0) ? (slSpx[ei] - entry) / entry : null;
     }
-    return { idx, date: dates[idx], entry, score: scores[idx], fwd };
+    return { idx, date: slDates[idx], entry, fwd };
   });
 
-  // Equity curve: compound returns for selected holding period
+  // Equity curve: long SPX when bull, flat when bear
   let equity = 100;
-  let holdUntil = -1;
-  const eqDates = [];
-  const eqStrategy = [];
-  const eqBuyHold = [];
-  const firstSpx = si < n ? spx[si] : 1;
-  const trigSet = new Set(triggers);
-
-  for (let i = si; i < n; i++) {
-    if (spx[i] <= 0) continue;
-    eqDates.push(dates[i]);
-    eqBuyHold.push(100 * spx[i] / firstSpx);
-
-    if (trigSet.has(i) && i >= holdUntil) {
-      const exitIdx = Math.min(i + holdDays, n - 1);
-      if (spx[exitIdx] > 0) {
-        const ret = (spx[exitIdx] - spx[i]) / spx[i];
-        equity *= (1 + ret);
-      }
-      holdUntil = i + holdDays;
+  const eqDates = [], eqStrategy = [], eqBuyHold = [];
+  const firstSpx = slSpx[0] > 0 ? slSpx[0] : 1;
+  for (let i = 0; i < m; i++) {
+    if (slSpx[i] <= 0) continue;
+    eqDates.push(slDates[i]);
+    eqBuyHold.push(100 * slSpx[i] / firstSpx);
+    if (i > 0 && slSpx[i - 1] > 0 && bull[i - 1] === 1) {
+      equity *= slSpx[i] / slSpx[i - 1];
     }
     eqStrategy.push(equity);
   }
 
-  // Summary stats for selected hold period
-  const holdKey = HORIZONS.find((h) => h.days === holdDays)?.key || "1M";
-  const returns = trades.map((t) => t.fwd[holdKey]).filter((r) => r != null);
-  const wins = returns.filter((r) => r > 0).length;
-  const avgReturn = returns.length ? returns.reduce((a, b) => a + b, 0) / returns.length : 0;
-  const bestTrade = returns.length ? Math.max(...returns) : 0;
-  const worstTrade = returns.length ? Math.min(...returns) : 0;
-
-  // Max drawdown of strategy equity curve
-  let peak = 0, maxDD = 0;
-  for (const v of eqStrategy) {
-    if (v > peak) peak = v;
-    const dd = (peak - v) / peak;
-    if (dd > maxDD) maxDD = dd;
-  }
-
-  // Forward return stats per horizon (signal days + all days baseline)
-  const horizonStats = HORIZONS.map((h) => {
+  // Stats per horizon
+  const horizonStats = BT_HORIZONS.map((h) => {
     const rets = trades.map((t) => t.fwd[h.key]).filter((r) => r != null);
     const avg = rets.length ? rets.reduce((a, b) => a + b, 0) / rets.length : 0;
     const w = rets.length ? rets.filter((r) => r > 0).length / rets.length : 0;
-    // All-days baseline: average forward return from any random day
-    let allDayRets = [];
+    // All-days baseline
+    let allR = [];
     for (let j = si; j < n - h.days; j++) {
-      if (spx[j] > 0 && spx[j + h.days] > 0) {
-        allDayRets.push((spx[j + h.days] - spx[j]) / spx[j]);
-      }
+      if (spx[j] > 0 && spx[j + h.days] > 0) allR.push((spx[j + h.days] - spx[j]) / spx[j]);
     }
-    const allDayAvg = allDayRets.length ? allDayRets.reduce((a, b) => a + b, 0) / allDayRets.length : 0;
-    const allDayWin = allDayRets.length ? allDayRets.filter((r) => r > 0).length / allDayRets.length : 0;
-    return { key: h.key, avg, winRate: w, count: rets.length, allDayAvg, allDayWin, allDayCount: allDayRets.length };
+    const allAvg = allR.length ? allR.reduce((a, b) => a + b, 0) / allR.length : 0;
+    const allWin = allR.length ? allR.filter((r) => r > 0).length / allR.length : 0;
+    return { key: h.key, avg, winRate: w, count: rets.length, allDayAvg: allAvg, allDayWin: allWin, allDayCount: allR.length };
   });
 
+  // Summary
+  const bullDays = bull.filter((b) => b === 1).length;
+  const bearDays = bull.filter((b) => b === 0).length;
+  let peak = 0, maxDD = 0;
+  for (const v of eqStrategy) { if (v > peak) peak = v; const dd = (peak - v) / peak; if (dd > maxDD) maxDD = dd; }
+  const totalReturn = eqStrategy.length >= 2 ? (eqStrategy[eqStrategy.length - 1] / eqStrategy[0] - 1) : 0;
+  const bhReturn = eqBuyHold.length >= 2 ? (eqBuyHold[eqBuyHold.length - 1] / eqBuyHold[0] - 1) : 0;
+
   return {
-    trades,
-    equity: { dates: eqDates, strategy: eqStrategy, buyHold: eqBuyHold },
-    stats: {
-      numTrades: trades.length,
-      avgReturn,
-      winRate: returns.length ? wins / returns.length : 0,
-      bestTrade,
-      worstTrade,
-      maxDrawdown: maxDD,
-      holdKey,
-    },
+    trades, equity: { dates: eqDates, strategy: eqStrategy, buyHold: eqBuyHold },
     horizonStats,
-    triggerIndices: triggers,
+    stats: { entries: entries.length, bullDays, bearDays, totalReturn, bhReturn, maxDD },
   };
 }
 
 // ═══════════════════════════════════════════════════════════════
-// EquityCurveChart — dual line (strategy vs buy-and-hold)
+// CompositeSignalView
 // ═══════════════════════════════════════════════════════════════
-function EquityCurveChart({ dates, strategy, buyHold, triggerDates, height = 420 }) {
-  const ref = useRef(null);
-  const [hover, setHover] = useState(null);
-  const [W, setW] = useState(600);
+function CompositeSignalView({ data }) {
+  const [thmTf, setThmTf] = useState("5Y");
+  const [ltTf, setLtTf] = useState("ALL");
 
-  useEffect(() => {
-    if (!ref.current) return;
-    const ro = new ResizeObserver((e) => { const w = e[0].contentRect.width; if (w > 0) setW(w); });
-    ro.observe(ref.current);
-    return () => ro.disconnect();
-  }, []);
+  const thmSliced = useMemo(() => {
+    if (!data?.thm) return null;
+    return sliceByTf(data.thm.dates, [data.thm.spx, data.thm.trend, data.thm.composite], thmTf);
+  }, [data, thmTf]);
 
-  const n = dates.length;
-  if (n < 2) return null;
+  const ltSliced = useMemo(() => {
+    if (!data?.lt) return null;
+    return sliceByTf(data.lt.dates, [data.lt.spx, data.lt.trend, data.lt.composite], ltTf);
+  }, [data, ltTf]);
 
-  const pad = { l: 52, r: 8, t: 12, b: 20 };
-  const H = height - pad.t - pad.b;
-  const xS = (i) => pad.l + (i / (n - 1)) * (W - pad.l - pad.r);
-
-  const allVals = [...strategy, ...buyHold].filter((v) => v != null && isFinite(v));
-  const mn = Math.min(...allVals) * 0.98;
-  const mx = Math.max(...allVals) * 1.02;
-  const yS = (v) => (v == null || !isFinite(v)) ? null : pad.t + H - ((v - mn) / (mx - mn)) * H;
-
-  const buildPath = (vals) => {
-    let p = "";
-    for (let i = 0; i < n; i++) { const y = yS(vals[i]); if (y == null) continue; p += (p ? "L" : "M") + `${xS(i).toFixed(1)},${y.toFixed(1)}`; }
-    return p;
-  };
-
-  const stratPath = buildPath(strategy);
-  const bhPath = buildPath(buyHold);
-
-  // Trigger markers
-  const trigSet = new Set(triggerDates || []);
-  const trigPts = [];
-  for (let i = 0; i < n; i++) {
-    if (trigSet.has(dates[i])) {
-      const y = yS(strategy[i]);
-      if (y != null) trigPts.push({ x: xS(i), y });
-    }
-  }
-
-  // Y-axis labels
-  const ticks = [mn, (mn + mx) / 2, mx].map((v) => ({ y: yS(v), label: v.toFixed(0) }));
-
-  // Date labels
-  const dateLbls = [];
-  const step = Math.max(1, Math.floor(n / 6));
-  for (let i = 0; i < n; i += step) {
-    dateLbls.push({ x: xS(i), label: new Date(dates[i]).toLocaleDateString("en-US", { year: "2-digit", month: "short" }) });
-  }
-
-  const handleMouse = (e) => {
-    const r = ref.current?.getBoundingClientRect(); if (!r) return;
-    const idx = Math.round(((e.clientX - r.left - pad.l) / (W - pad.l - pad.r)) * (n - 1));
-    if (idx >= 0 && idx < n) setHover(idx);
-  };
-  const hx = hover != null ? xS(hover) : null;
-
-  // Strategy return
-  const stratReturn = strategy.length >= 2 ? (strategy[strategy.length - 1] / strategy[0] - 1) * 100 : 0;
-  const bhReturn = buyHold.length >= 2 ? (buyHold[buyHold.length - 1] / buyHold[0] - 1) * 100 : 0;
+  const m = data?.metrics || {};
+  const ltInds = data?.indicators?.filter((i) => i.group === "lt") || [];
+  const thmInds = data?.indicators?.filter((i) => i.group === "thm") || [];
 
   return (
-    <div ref={ref} style={{ position: "relative", width: "100%" }}
-      onMouseMove={handleMouse} onMouseLeave={() => setHover(null)}>
-      {/* Legend */}
-      <div style={{ padding: "0 8px 2px", display: "flex", gap: 16, fontSize: 9, color: T.dim }}>
-        <span>— <span style={{ color: T.green }}>STRATEGY</span> {stratReturn >= 0 ? "+" : ""}{stratReturn.toFixed(1)}%</span>
-        <span>— <span style={{ color: T.dim }}>BUY & HOLD</span> {bhReturn >= 0 ? "+" : ""}{bhReturn.toFixed(1)}%</span>
-      </div>
-      <svg width={W} height={height} style={{ display: "block" }}>
-        {/* Grid */}
-        {ticks.map((l, i) => <line key={i} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.03)" />)}
-        {/* 100 baseline */}
-        {yS(100) != null && <line x1={pad.l} x2={W - pad.r} y1={yS(100)} y2={yS(100)} stroke="rgba(255,255,255,0.08)" strokeDasharray="3,4" />}
-        {/* Lines */}
-        <path d={bhPath} fill="none" stroke={T.dim} strokeWidth={1} opacity={0.5} />
-        <path d={stratPath} fill="none" stroke={T.green} strokeWidth={1.2} />
-        {/* Triggers */}
-        {trigPts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={2} fill={T.orange} opacity={0.7} />)}
-        {/* Y labels */}
-        {ticks.map((l, i) => <text key={i} x={pad.l - 4} y={l.y + 3} fill={T.dim} fontSize={8} textAnchor="end" fontFamily={T.font}>{l.label}</text>)}
-        {/* Date labels */}
-        {dateLbls.map((l, i) => <text key={i} x={l.x} y={height - 4} fill={T.dim} fontSize={8} textAnchor="middle" fontFamily={T.font}>{l.label}</text>)}
-        {/* Crosshair */}
-        {hover != null && <>
-          <line x1={hx} x2={hx} y1={pad.t} y2={pad.t + H} stroke="rgba(255,255,255,0.15)" strokeWidth={0.5} />
-          {yS(strategy[hover]) != null && <circle cx={hx} cy={yS(strategy[hover])} r={2.5} fill={T.green} stroke={T.bg} strokeWidth={1} />}
-          {yS(buyHold[hover]) != null && <circle cx={hx} cy={yS(buyHold[hover])} r={2.5} fill={T.dim} stroke={T.bg} strokeWidth={1} />}
-        </>}
-      </svg>
-      {hover != null && (
-        <div style={{
-          position: "absolute", left: Math.min(hx + 10, W - 180), top: pad.t,
-          background: "rgba(10,10,12,0.94)", border: `1px solid ${T.borderBright}`,
-          padding: "5px 8px", pointerEvents: "none", zIndex: 10,
-          fontFamily: T.font, fontSize: 9, lineHeight: 1.5,
-        }}>
-          <div style={{ color: T.dim }}>{dates[hover]}</div>
-          <div style={{ color: T.green }}>Strategy: {strategy[hover]?.toFixed(1)}</div>
-          <div style={{ color: T.text }}>Buy & Hold: {buyHold[hover]?.toFixed(1)}</div>
+    <>
+      {/* Main 2-column layout */}
+      <div style={{ display: "flex", gap: 0, flex: 1, minHeight: 0 }}>
+        {/* LEFT: Charts */}
+        <div style={{ flex: "1 1 55%", minWidth: 0, borderRight: `1px solid ${T.border}`, overflow: "auto" }}>
+          {/* THM Chart */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 8px 0" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8 }}>
+              TREND HEALTH MODEL
+              <span style={{ fontWeight: 400, color: T.dim, fontSize: 9, marginLeft: 8 }}>
+                {m.thmScore}% — <span style={{ color: m.thmBull ? T.green : T.red }}>{m.thmBull ? "BULL" : "BEAR"}</span>
+              </span>
+            </div>
+            <TimeframeBar value={thmTf} onChange={setThmTf} />
+          </div>
+          <InfoBox>
+            <span style={{ color: T.orange, fontWeight: 600 }}>How to read this: </span>
+            The Trend Health Model aggregates 18 indicators across macro, breadth, volatility, momentum, and sentiment.
+            The composite score (0–100%) reflects the percentage of indicators in a bullish state.
+            Above 55% = <span style={{ color: T.green }}>BULL</span> regime (green background). Below = <span style={{ color: T.red }}>BEAR</span> regime (red background).
+          </InfoBox>
+          <div style={{ background: T.bgPanel }}>
+            {thmSliced && <RegimeChart dates={thmSliced.dates} spx={thmSliced.arrays[0]} trend={thmSliced.arrays[1]} indicator={thmSliced.arrays[2]} indLabel="Health Score %" height={380} />}
+          </div>
+
+          {/* LT Chart */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 8px 0" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8 }}>
+              LONG TERM COMPOSITE
+              <span style={{ fontWeight: 400, color: T.dim, fontSize: 9, marginLeft: 8 }}>
+                {m.ltScore}/{m.ltTotal} — <span style={{ color: m.ltBull ? T.green : T.red }}>{m.ltBull ? "BULL" : "BEAR"}</span>
+              </span>
+            </div>
+            <TimeframeBar value={ltTf} onChange={setLtTf} />
+          </div>
+          <InfoBox>
+            <span style={{ color: T.orange, fontWeight: 600 }}>How to read this: </span>
+            The Long Term Composite tracks 3 slow-moving macro indicators: OECD CLI, Nasdaq 100 Hi-Lo breadth, and credit spreads.
+            When ≥2 out of 3 are bullish, the model signals <span style={{ color: T.green }}>BULL</span>.
+            This composite captures structural economic regime shifts and rarely changes — ideal for strategic allocation.
+          </InfoBox>
+          <div style={{ background: T.bgPanel }}>
+            {ltSliced && <RegimeChart dates={ltSliced.dates} spx={ltSliced.arrays[0]} trend={ltSliced.arrays[1]} indicator={ltSliced.arrays[2]} indLabel="Composite Score" height={340} />}
+          </div>
         </div>
-      )}
-    </div>
+
+        {/* RIGHT: Indicator tables */}
+        <div style={{ flex: "1 1 45%", minWidth: 0, overflow: "auto" }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8, padding: "8px 8px 0",
+            display: "flex", justifyContent: "space-between" }}>
+            <span>INDICATORS</span>
+            <span style={{ fontWeight: 400, color: T.dim, fontSize: 9 }}>
+              {m.bullishCount}/{m.totalCount} bullish · Click to expand
+            </span>
+          </div>
+          <InfoBox>
+            <span style={{ color: T.orange, fontWeight: 600 }}>Reading the table: </span>
+            Each indicator outputs a binary signal: <span style={{ color: T.green, fontWeight: 600 }}>LONG</span> (bullish — risk on) or <span style={{ color: T.red, fontWeight: 600 }}>SHORT</span> (bearish — risk off).
+            The date shows the last regime change. Expand any row to see SPX colored by the indicator's bull/bear periods.
+          </InfoBox>
+
+          {/* LT indicators */}
+          <div style={{ padding: "6px 8px 2px", fontSize: 9, color: T.orange, fontWeight: 600, letterSpacing: 0.8 }}>LONG TERM</div>
+          {ltInds.map((ind, i) => <IndicatorRow key={ind.col} ind={ind} index={i + 1} />)}
+
+          {/* THM indicators */}
+          <div style={{ padding: "10px 8px 2px", fontSize: 9, color: T.orange, fontWeight: 600, letterSpacing: 0.8 }}>HEALTH MODEL</div>
+          {thmInds.map((ind, i) => <IndicatorRow key={ind.col} ind={ind} index={i + 4} />)}
+        </div>
+      </div>
+    </>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════
-// Stat cell
-// ═══════════════════════════════════════════════════════════════
-function StatCell({ label, value, color, sub }) {
-  return (
-    <div style={{
-      padding: "8px 10px", background: T.bgPanel, border: `1px solid ${T.border}`,
-      flex: "1 1 0",
-    }}>
-      <div style={{ fontSize: 8, color: T.dim, letterSpacing: 0.8, marginBottom: 3 }}>{label}</div>
-      <div style={{ fontSize: 14, fontWeight: 700, color: color || T.bright }}>{value}</div>
-      {sub && <div style={{ fontSize: 8, color: T.dim, marginTop: 2 }}>{sub}</div>}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// BacktestView — full backtest module
+// BacktestView
 // ═══════════════════════════════════════════════════════════════
 function BacktestView({ data }) {
-  const [minScore, setMinScore] = useState(3);
-  const [holdDays, setHoldDays] = useState(21);
+  const [model, setModel] = useState("THM");
+  const [threshold, setThreshold] = useState(55);
   const [dateRange, setDateRange] = useState("ALL");
 
-  const bt = useMemo(
-    () => computeBacktest(data?.composite, minScore, holdDays, dateRange),
-    [data, minScore, holdDays, dateRange]
-  );
+  const thmOpts = [
+    { value: 45, label: ">45%" }, { value: 50, label: ">50%" },
+    { value: 55, label: ">55%" }, { value: 60, label: ">60%" }, { value: 70, label: ">70%" },
+  ];
+  const ltOpts = [
+    { value: 1, label: "≥1" }, { value: 2, label: "≥2" }, { value: 3, label: "=3" },
+  ];
 
-  const eqLen = bt?.equity?.dates?.length || 0;
-  const { zoomStart: eqZS, zoomEnd: eqZE, setZoom: setEqZoom } = useZoom(eqLen);
-  const eqZoomed = useMemo(() => {
-    if (!bt) return null;
-    return {
-      dates: bt.equity.dates.slice(eqZS, eqZE + 1),
-      strategy: bt.equity.strategy.slice(eqZS, eqZE + 1),
-      buyHold: bt.equity.buyHold.slice(eqZS, eqZE + 1),
-    };
-  }, [bt, eqZS, eqZE]);
+  // Reset threshold when model changes
+  const handleModelChange = (m) => { setModel(m); setThreshold(m === "THM" ? 55 : 2); };
+
+  const bt = useMemo(
+    () => computeBacktest(data, model, threshold, dateRange),
+    [data, model, threshold, dateRange]
+  );
 
   if (!bt) return null;
 
@@ -943,74 +838,44 @@ function BacktestView({ data }) {
 
   return (
     <>
-      {/* Controls bar */}
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "6px 0", borderBottom: `1px solid ${T.border}`,
-        flexWrap: "wrap", gap: 8,
-      }}>
+      {/* Controls */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+        padding: "6px 0", borderBottom: `1px solid ${T.border}`, flexWrap: "wrap", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <ButtonStrip label="MIN SCORE" options={[2, 3, 4, 5]} value={minScore} onChange={setMinScore} />
-          <ButtonStrip label="HOLD" options={[
-            { value: 5, label: "1W" },
-            { value: 21, label: "1M" },
-            { value: 63, label: "3M" },
-            { value: 126, label: "6M" },
-            { value: 252, label: "1Y" },
-          ]} value={holdDays} onChange={setHoldDays} />
+          <ButtonStrip label="MODEL" options={[{ value: "THM", label: "HEALTH" }, { value: "LT", label: "LONG TERM" }]} value={model} onChange={handleModelChange} />
+          <ButtonStrip label="THRESHOLD" options={model === "THM" ? thmOpts : ltOpts} value={threshold} onChange={setThreshold} />
         </div>
-        <TimeframeBar value={dateRange} onChange={setDateRange} count={bt.trades.length} style={{ fontSize: 9 }} />
+        <TimeframeBar value={dateRange} onChange={setDateRange} />
       </div>
 
-      {/* Main layout */}
+      {/* Layout */}
       <div style={{ display: "flex", gap: 0, flex: 1, minHeight: 0 }}>
-
-        {/* LEFT: Equity curve + trade log */}
+        {/* LEFT: equity curve + trade log */}
         <div style={{ flex: "1 1 55%", minWidth: 0, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column" }}>
-          <div style={{
-            fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8,
-            padding: "8px 8px 0",
-          }}>
-            EQUITY CURVE
-          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8, padding: "8px 8px 0" }}>EQUITY CURVE</div>
           <InfoBox>
             <span style={{ color: T.orange, fontWeight: 600 }}>How to read this: </span>
-            The <span style={{ color: T.green }}>green line</span> shows the cumulative return of buying the S&P 500 at each composite trigger and holding for the selected period. The <span style={{ color: T.dim }}>grey line</span> is a simple buy-and-hold benchmark. <span style={{ color: T.orange }}>●</span> marks each entry point. The strategy captures short-term mean-reversion after broad market stress.
+            The <span style={{ color: T.orange }}>orange line</span> shows the return of being long S&P 500 only during <span style={{ color: T.green }}>BULL</span> regimes and flat during <span style={{ color: T.red }}>BEAR</span> regimes.
+            The <span style={{ color: T.dim }}>grey line</span> is a simple buy-and-hold benchmark. Both start at 100. The drawdown subplot shows peak-to-trough declines.
           </InfoBox>
           <div style={{ background: T.bgPanel, flex: 1 }}>
-            {eqZoomed && (
-              <EquityCurveChart
-                dates={eqZoomed.dates}
-                strategy={eqZoomed.strategy}
-                buyHold={eqZoomed.buyHold}
-                triggerDates={bt.trades.map((t) => t.date)}
-                height={360}
-              />
-            )}
-          </div>
-          <div style={{ padding: "0 8px" }}>
-            {bt.equity.dates.length > 0 && <ZoomSlider totalCount={eqLen} zoomStart={eqZS} zoomEnd={eqZE} onChange={setEqZoom} dates={bt.equity.dates} />}
+            <EquityCurveChart dates={bt.equity.dates} strategy={bt.equity.strategy} buyHold={bt.equity.buyHold} height={460} />
           </div>
 
-          {/* Trade table */}
+          {/* Trade log */}
           <div style={{ padding: "8px 8px 0" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8, marginBottom: 4 }}>
-              TRADE LOG
-              <span style={{ fontWeight: 400, color: T.dim, fontSize: 9, marginLeft: 8 }}>{bt.trades.length} signals</span>
+              REGIME ENTRIES <span style={{ fontWeight: 400, color: T.dim, fontSize: 9, marginLeft: 8 }}>{bt.trades.length} bull entries</span>
             </div>
           </div>
           <div style={{ flex: 1, overflow: "auto", padding: "0 8px 8px", maxHeight: 200 }}>
-            <table style={{
-              width: "100%", borderCollapse: "collapse", fontSize: 9, fontFamily: T.font,
-            }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 9, fontFamily: T.font }}>
               <thead>
                 <tr style={{ borderBottom: `1px solid ${T.border}` }}>
-                  {["DATE", "SPX", "SC", "1W", "1M", "3M", "6M", "1Y"].map((h) => (
-                    <th key={h} style={{
-                      padding: "5px 4px", textAlign: h === "DATE" ? "left" : "right",
+                  {["DATE", "SPX", ...BT_HORIZONS.map((h) => h.key)].map((h) => (
+                    <th key={h} style={{ padding: "5px 4px", textAlign: h === "DATE" ? "left" : "right",
                       color: T.dim, fontWeight: 600, letterSpacing: 0.5,
-                      position: "sticky", top: 0, background: T.bg, zIndex: 1,
-                    }}>{h}</th>
+                      position: "sticky", top: 0, background: T.bg, zIndex: 1 }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -1018,19 +883,9 @@ function BacktestView({ data }) {
                 {bt.trades.slice().reverse().map((t, i) => (
                   <tr key={i} style={{ borderBottom: `1px solid ${T.border}` }}>
                     <td style={{ padding: "4px 4px", color: T.text }}>{t.date}</td>
-                    <td style={{ padding: "4px 4px", textAlign: "right", color: T.bright }}>
-                      {t.entry.toFixed(0)}
-                    </td>
-                    <td style={{ padding: "4px 4px", textAlign: "right", color: T.orange }}>
-                      {t.score}
-                    </td>
-                    {HORIZONS.map((h) => (
-                      <td key={h.key} style={{
-                        padding: "4px 4px", textAlign: "right",
-                        color: pctColor(t.fwd[h.key]),
-                      }}>
-                        {pct(t.fwd[h.key])}
-                      </td>
+                    <td style={{ padding: "4px 4px", textAlign: "right", color: T.bright }}>{t.entry.toFixed(0)}</td>
+                    {BT_HORIZONS.map((h) => (
+                      <td key={h.key} style={{ padding: "4px 4px", textAlign: "right", color: pctColor(t.fwd[h.key]) }}>{pct(t.fwd[h.key])}</td>
                     ))}
                   </tr>
                 ))}
@@ -1039,190 +894,47 @@ function BacktestView({ data }) {
           </div>
         </div>
 
-        {/* RIGHT: Summary + forward returns */}
+        {/* RIGHT: summary + forward returns */}
         <div style={{ flex: "1 1 45%", minWidth: 0, display: "flex", flexDirection: "column", overflow: "auto" }}>
-
-          {/* Summary stats */}
           <div style={{ padding: "8px 8px 4px" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8, marginBottom: 0 }}>
-              SUMMARY
-              <span style={{ fontWeight: 400, color: T.dim, fontSize: 9, marginLeft: 8 }}>
-                Hold {HORIZONS.find((h) => h.days === holdDays)?.key || "—"}
-              </span>
-            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8, marginBottom: 0 }}>SUMMARY</div>
             <InfoBox>
               <span style={{ color: T.orange, fontWeight: 600 }}>How to read this: </span>
-              Performance metrics for the selected holding period. AVG RETURN = mean return across all triggered trades. WIN RATE = percentage of trades that were profitable. MAX DRAWDOWN = largest peak-to-trough decline of the strategy equity curve.
+              The strategy is long S&P 500 during bull regimes and flat (cash) during bear regimes. BULL DAYS / BEAR DAYS show the time split. MAX DRAWDOWN is the worst peak-to-trough decline of the strategy.
             </InfoBox>
             <div style={{ display: "flex", gap: 2, marginBottom: 2 }}>
-              <StatCell label="TRADES" value={bt.stats.numTrades} />
-              <StatCell label="AVG RETURN" value={pct(bt.stats.avgReturn)} color={pctColor(bt.stats.avgReturn)} />
-              <StatCell label="WIN RATE" value={`${(bt.stats.winRate * 100).toFixed(0)}%`}
-                color={bt.stats.winRate >= 0.5 ? T.green : T.red} />
+              <StatCell label="REGIME ENTRIES" value={bt.stats.entries} />
+              <StatCell label="STRATEGY RETURN" value={pct(bt.stats.totalReturn)} color={pctColor(bt.stats.totalReturn)} />
+              <StatCell label="BUY & HOLD" value={pct(bt.stats.bhReturn)} color={pctColor(bt.stats.bhReturn)} />
             </div>
             <div style={{ display: "flex", gap: 2 }}>
-              <StatCell label="BEST TRADE" value={pct(bt.stats.bestTrade)} color={T.green} />
-              <StatCell label="WORST TRADE" value={pct(bt.stats.worstTrade)} color={T.red} />
-              <StatCell label="MAX DRAWDOWN" value={`-${(bt.stats.maxDrawdown * 100).toFixed(1)}%`} color={T.red} />
+              <StatCell label="BULL DAYS" value={bt.stats.bullDays.toLocaleString()} color={T.green} />
+              <StatCell label="BEAR DAYS" value={bt.stats.bearDays.toLocaleString()} color={T.red} />
+              <StatCell label="MAX DRAWDOWN" value={`-${(bt.stats.maxDD * 100).toFixed(1)}%`} color={T.red} />
             </div>
           </div>
 
-          {/* Average forward returns with all-days comparison */}
+          {/* Forward returns */}
           <div style={{ padding: "8px 8px 4px" }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8, marginBottom: 0 }}>
-              AVERAGE FORWARD RETURNS
-            </div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8, marginBottom: 0 }}>FORWARD RETURNS AFTER BULL ENTRY</div>
             <InfoBox>
               <span style={{ color: T.orange, fontWeight: 600 }}>Reading the table: </span>
-              <span style={{ color: T.green }}>SIGNAL AVG</span> = average S&P 500 return after a buy signal at each horizon.
-              <span style={{ color: T.dim }}> ALL DAYS AVG</span> = average return over the same horizon on any random day — the baseline.
-              Green = positive. Red = negative. A signal that consistently beats the all-days average demonstrates genuine predictive edge.
+              <span style={{ color: T.green }}>SIGNAL AVG</span> = average S&P 500 return after each bear→bull transition.
+              <span style={{ color: T.dim }}> ALL DAYS AVG</span> = average return from any random day — the baseline.
+              A signal that consistently beats the all-days average demonstrates the model captures genuine regime shifts.
             </InfoBox>
             <div style={{ display: "flex", gap: 2 }}>
               {bt.horizonStats.map((h) => (
-                <div key={h.key} style={{
-                  flex: 1, padding: "6px 6px", background: T.bgPanel, border: `1px solid ${T.border}`,
-                  textAlign: "center",
-                }}>
+                <div key={h.key} style={{ flex: 1, padding: "6px 6px", background: T.bgPanel, border: `1px solid ${T.border}`, textAlign: "center" }}>
                   <div style={{ fontSize: 9, color: T.dim, fontWeight: 600, marginBottom: 3, letterSpacing: 0.5 }}>{h.key}</div>
                   <div style={{ fontSize: 12, fontWeight: 700, color: pctColor(h.avg) }}>{pct(h.avg)}</div>
-                  <div style={{ fontSize: 8, color: T.dim, marginTop: 2 }}>
-                    {(h.winRate * 100).toFixed(0)}% win · {h.count} trades
-                  </div>
-                  <div style={{
-                    marginTop: 4, paddingTop: 4,
-                    borderTop: `1px solid ${T.border}`,
-                    fontSize: 8, color: T.dim,
-                  }}>
-                    ALL DAYS
-                  </div>
-                  <div style={{ fontSize: 10, fontWeight: 600, color: pctColor(h.allDayAvg), marginTop: 1 }}>
-                    {pct(h.allDayAvg)}
-                  </div>
-                  <div style={{ fontSize: 8, color: T.dim, marginTop: 1 }}>
-                    {(h.allDayWin * 100).toFixed(0)}% win · {h.allDayCount.toLocaleString()}d
-                  </div>
+                  <div style={{ fontSize: 8, color: T.dim, marginTop: 2 }}>{(h.winRate * 100).toFixed(0)}% win · {h.count} entries</div>
+                  <div style={{ marginTop: 4, paddingTop: 4, borderTop: `1px solid ${T.border}`, fontSize: 8, color: T.dim }}>ALL DAYS</div>
+                  <div style={{ fontSize: 10, fontWeight: 600, color: pctColor(h.allDayAvg), marginTop: 1 }}>{pct(h.allDayAvg)}</div>
+                  <div style={{ fontSize: 8, color: T.dim, marginTop: 1 }}>{(h.allDayWin * 100).toFixed(0)}% win · {h.allDayCount.toLocaleString()}d</div>
                 </div>
               ))}
             </div>
-          </div>
-        </div>
-      </div>
-    </>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
-// LiveSignalView — the main BTD content
-// ═══════════════════════════════════════════════════════════════
-function LiveSignalView({ data }) {
-  const [compTf, setCompTf] = useState("ALL");
-
-  const compSliced = useMemo(() => {
-    if (!data?.composite) return null;
-    const { dates, arrays: [spx, scores, ma2] } = sliceByTf(
-      data.composite.dates,
-      [data.composite.spx, data.composite.scores, data.composite.ma2],
-      compTf
-    );
-    const dateSet = new Set(dates);
-    const triggers = (data.composite.triggers || []).filter((t) => dateSet.has(t));
-    return { dates, spx, scores, ma2, triggers };
-  }, [data, compTf]);
-
-  const compLen = compSliced?.dates?.length || 0;
-  const { zoomStart: compZS, zoomEnd: compZE, setZoom: setCompZoom } = useZoom(compLen);
-  const compZoomed = useMemo(() => {
-    if (!compSliced) return null;
-    const zd = compSliced.dates.slice(compZS, compZE + 1);
-    const dateSet = new Set(zd);
-    return {
-      dates: zd,
-      spx: compSliced.spx.slice(compZS, compZE + 1),
-      scores: compSliced.scores.slice(compZS, compZE + 1),
-      triggers: compSliced.triggers.filter((t) => dateSet.has(t)),
-    };
-  }, [compSliced, compZS, compZE]);
-
-  const m = data?.metrics || {};
-  const activeCount = data?.indicators
-    ? IND_ORDER.filter((id) => data.indicators[id] && isSignalActive(data.indicators[id])).length
-    : 0;
-
-  return (
-    <>
-      {/* Control bar */}
-      <div style={{
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "6px 0", borderBottom: `1px solid ${T.border}`,
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 9, color: T.dim }}>
-          <span>
-            <span style={{ color: T.green }}>▲</span> Buy trigger
-            &nbsp;&nbsp;
-            <span style={{ color: "rgba(100,45,0,0.85)" }}>█</span> Active zone
-          </span>
-          <span>
-            ACTIVE: <span style={{ color: T.green, fontWeight: 700 }}>{activeCount}</span>
-            <span style={{ color: T.dim }}> / 9</span>
-          </span>
-        </div>
-        <TimeframeBar value={compTf} onChange={setCompTf} count={compZoomed?.dates.length} />
-      </div>
-
-      {/* Main 2-column layout */}
-      <div style={{ display: "flex", gap: 0, flex: 1, minHeight: 0 }}>
-
-        {/* LEFT: Composite chart */}
-        <div style={{ flex: "1 1 55%", minWidth: 0, borderRight: `1px solid ${T.border}` }}>
-          <div style={{
-            fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8,
-            padding: "8px 8px 0",
-          }}>
-            COMPOSITE SIGNAL
-          </div>
-          <InfoBox>
-            <span style={{ color: T.orange, fontWeight: 600 }}>How to read this: </span>
-            The composite tracks how many of the 9 indicators are simultaneously active. Green bars show the signal count (0–9). When 3+ indicators fire within a 10-day window, the model triggers a <span style={{ color: T.green }}>▲ BUY</span> signal. Historically, clustered signals precede meaningful S&P 500 bounces.
-          </InfoBox>
-          <div style={{ background: T.bgPanel }}>
-            {compZoomed && (
-              <CompositeChart
-                dates={compZoomed.dates} spx={compZoomed.spx}
-                scores={compZoomed.scores} triggers={compZoomed.triggers}
-                height={440}
-              />
-            )}
-          </div>
-          <div style={{ padding: "0 8px" }}>
-            {compSliced && <ZoomSlider totalCount={compLen} zoomStart={compZS} zoomEnd={compZE} onChange={setCompZoom} dates={compSliced.dates} />}
-          </div>
-        </div>
-
-        {/* RIGHT: Indicators list */}
-        <div style={{ flex: "1 1 45%", minWidth: 0, overflow: "auto" }}>
-          <div style={{
-            fontSize: 11, fontWeight: 700, color: T.white, letterSpacing: 0.8,
-            padding: "8px 8px 0",
-            display: "flex", justifyContent: "space-between",
-          }}>
-            <span>INDICATORS</span>
-            <span style={{ fontWeight: 400, color: T.dim, fontSize: 9, letterSpacing: 0.3 }}>
-              Click to expand
-            </span>
-          </div>
-          <InfoBox>
-            <span style={{ color: T.orange, fontWeight: 600 }}>Reading the table: </span>
-            Each indicator monitors a different dimension of market stress — breadth, sentiment, volatility, and momentum. <span style={{ color: T.green, fontWeight: 600 }}>BUY</span> = the indicator has fired within the last 10 trading days. <span style={{ color: T.dim }}>IDLE</span> = no active signal. Expand any row to see its full history overlaid on the S&P 500.
-          </InfoBox>
-          <div>
-            {data?.indicators && IND_ORDER.map((id) => {
-              const ind = data.indicators[id];
-              if (!ind) return null;
-              return (
-                <IndicatorRow key={id} id={id} indicator={ind} isActive={isSignalActive(ind)} />
-              );
-            })}
           </div>
         </div>
       </div>
@@ -1238,123 +950,71 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [subTab, setSubTab] = useState("LIVE SIGNAL");
+  const [subTab, setSubTab] = useState("COMPOSITE SIGNAL");
 
-  const loadData = useCallback(async (force = false) => {
-    try {
-      if (force) setRefreshing(true);
-      else setLoading(true);
-      setError(null);
-      const d = await fetchData(force);
-      setData(d);
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+  const loadData = useCallback(async () => {
+    try { setLoading(true); setError(null); const d = await fetchData(); setData(d); }
+    catch (e) { setError(e.message); }
+    finally { setLoading(false); setRefreshing(false); }
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
 
-  const fetchedAt = data?.computedAt || data?.fetchedAt;
   const m = data?.metrics || {};
-  const scoreColor = m.btdScore >= 3 ? T.green : m.btdScore >= 1 ? T.amber : T.dim;
-  const scoreLabel = m.btdScore >= 3 ? "ELEVATED" : m.btdScore >= 1 ? "MODERATE" : "NORMAL";
+  const fetchedAt = data?.computedAt;
+  const thmColor = m.thmBull ? T.green : T.red;
 
-  // Shell (loading + error share the same chrome)
   const shell = (content) => (
-    <div style={{
-      background: T.bg, minHeight: "100vh", color: T.text, fontFamily: T.font,
-      display: "flex", flexDirection: "column",
-    }}>
-      <TitleBar fetchedAt={fetchedAt} onRefresh={() => loadData(true)} refreshing={refreshing} />
-      <NavBar active="BUY THE DIP" />
-
+    <div style={{ background: T.bg, minHeight: "100vh", color: T.text, fontFamily: T.font, display: "flex", flexDirection: "column" }}>
+      <TitleBar fetchedAt={fetchedAt} onRefresh={() => { setRefreshing(true); loadData(); }} refreshing={refreshing} />
+      <NavBar active="MARKET RISK" />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "0 16px" }}>
-        {/* Page header row — title left, status right */}
-        <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-          padding: "10px 0 0",
-        }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-            <span style={{ fontSize: 16, fontWeight: 700, color: T.white, letterSpacing: 1 }}>
-              BUY THE DIP
-            </span>
-          </div>
-
-          {/* Status badges — right side like Cross-Asset has SPX/10Y/DXY */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0 0" }}>
+          <span style={{ fontSize: 16, fontWeight: 700, color: T.white, letterSpacing: 1 }}>MARKET RISK</span>
           {data && (
             <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
-              <div style={{
-                padding: "3px 10px", fontSize: 10, fontFamily: T.font,
-                background: `${scoreColor}18`, border: `1px solid ${scoreColor}44`,
-                color: scoreColor, fontWeight: 700, letterSpacing: 0.5,
-              }}>
-                {scoreLabel} ({m.btdScore}/9)
+              <div style={{ padding: "3px 10px", fontSize: 10, fontFamily: T.font,
+                background: `${thmColor}18`, border: `1px solid ${thmColor}44`,
+                color: thmColor, fontWeight: 700, letterSpacing: 0.5 }}>
+                {m.thmBull ? "BULL" : "BEAR"} ({m.thmScore}%)
               </div>
-              <div style={{
-                padding: "3px 10px", fontSize: 9, fontFamily: T.font,
-                color: T.dim, background: T.bgPanel, border: `1px solid ${T.border}`,
-              }}>
-                SIGNAL <span style={{ color: T.bright }}>{m.lastSignalDate || "—"}</span>
+              <div style={{ padding: "3px 10px", fontSize: 9, fontFamily: T.font,
+                color: T.dim, background: T.bgPanel, border: `1px solid ${T.border}` }}>
+                LT <span style={{ color: m.ltBull ? T.green : T.red }}>{m.ltScore}/{m.ltTotal}</span>
               </div>
-              <div style={{
-                padding: "3px 10px", fontSize: 9, fontFamily: T.font,
-                color: T.dim, background: T.bgPanel, border: `1px solid ${T.border}`,
-              }}>
-                TRIGGER <span style={{ color: T.bright }}>{m.lastTriggerDate || "—"}</span>
+              <div style={{ padding: "3px 10px", fontSize: 9, fontFamily: T.font,
+                color: T.dim, background: T.bgPanel, border: `1px solid ${T.border}` }}>
+                SPX <span style={{ color: T.bright }}>{m.spxPrice?.toLocaleString()}</span>
+                <span style={{ color: m.spxChg >= 0 ? T.green : T.red, marginLeft: 4 }}>{m.spxChg >= 0 ? "+" : ""}{m.spxChg}%</span>
               </div>
             </div>
           )}
         </div>
-
-        {/* Sub-tabs */}
-        <SubTabs tabs={["LIVE SIGNAL", "BACKTEST"]} active={subTab} onChange={setSubTab} />
-
-        {/* Content */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-          {content}
-        </div>
+        <SubTabs tabs={["COMPOSITE SIGNAL", "BACKTEST"]} active={subTab} onChange={setSubTab} />
+        <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>{content}</div>
       </div>
-
-      {/* Footer */}
-      <div style={{
-        textAlign: "center", padding: "10px 0",
-        borderTop: `1px solid ${T.border}`,
-      }}>
+      <div style={{ textAlign: "center", padding: "10px 0", borderTop: `1px solid ${T.border}` }}>
         <span style={{ color: T.dim, fontSize: 8, letterSpacing: 1, fontFamily: T.font }}>
-          SMALLFISHMACRO · BARCHART DATA · GITHUB ACTIONS · VERCEL EDGE
+          SMALLFISHMACRO · BARCHART · FRED · YFINANCE · GITHUB ACTIONS · VERCEL EDGE
         </span>
       </div>
     </div>
   );
 
-  if (loading) {
-    return shell(
-      <div style={{ textAlign: "center", paddingTop: 100 }}>
-        <div style={{ fontSize: 12, color: T.orange, letterSpacing: 2, marginBottom: 6 }}>LOADING</div>
-        <div style={{ fontSize: 10, color: T.dim }}>Fetching indicator data...</div>
-      </div>
-    );
-  }
+  if (loading) return shell(<div style={{ textAlign: "center", paddingTop: 100 }}>
+    <div style={{ fontSize: 12, color: T.orange, letterSpacing: 2, marginBottom: 6 }}>LOADING</div>
+    <div style={{ fontSize: 10, color: T.dim }}>Fetching market risk data...</div>
+  </div>);
 
-  if (error) {
-    return shell(
-      <div style={{ textAlign: "center", paddingTop: 100 }}>
-        <div style={{ fontSize: 12, color: T.red, marginBottom: 8 }}>ERROR: {error}</div>
-        <button onClick={() => loadData(true)} style={{
-          padding: "4px 14px", fontSize: 10, fontFamily: T.font,
-          border: `1px solid ${T.border}`, background: "transparent",
-          color: T.dim, cursor: "pointer",
-        }}>RETRY</button>
-      </div>
-    );
-  }
+  if (error) return shell(<div style={{ textAlign: "center", paddingTop: 100 }}>
+    <div style={{ fontSize: 12, color: T.red, marginBottom: 8 }}>ERROR: {error}</div>
+    <button onClick={loadData} style={{ padding: "4px 14px", fontSize: 10, fontFamily: T.font,
+      border: `1px solid ${T.border}`, background: "transparent", color: T.dim, cursor: "pointer" }}>RETRY</button>
+  </div>);
 
   return shell(
-    subTab === "LIVE SIGNAL"
-      ? <LiveSignalView data={data} />
+    subTab === "COMPOSITE SIGNAL"
+      ? <CompositeSignalView data={data} />
       : <BacktestView data={data} />
   );
 }

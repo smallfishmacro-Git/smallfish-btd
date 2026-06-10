@@ -35,10 +35,10 @@ class handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Access-Control-Allow-Origin", "*")
-            # Cache at CDN for 1hr, serve stale for up to 24hr while revalidating
+            # Cache at CDN for 5min, serve stale for up to 24hr while revalidating
             self.send_header(
                 "Cache-Control",
-                "s-maxage=3600, stale-while-revalidate=86400"
+                "s-maxage=300, stale-while-revalidate=86400"
             )
             self.end_headers()
             self.wfile.write(payload)

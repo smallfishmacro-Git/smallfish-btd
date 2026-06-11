@@ -569,18 +569,15 @@ function TitleBar({ fetchedAt, onRefresh, refreshing }) {
 // ═══════════════════════════════════════════════════════════════
 function SubTabs({ tabs, active, onChange }) {
   return (
-    <div style={{
-      display: "flex", gap: 0, borderBottom: `1px solid ${T.border}`,
-    }}>
+    <div style={{ display: "flex", gap: 0 }}>
       {tabs.map((tab) => {
         const isActive = tab === active;
         return (
           <div key={tab} onClick={() => onChange(tab)} style={{
-            padding: "8px 18px", fontSize: 11, fontWeight: isActive ? 600 : 400,
-            fontFamily: T.font, letterSpacing: 0.8, cursor: "pointer",
+            padding: "5px 16px", fontSize: 10, fontWeight: 400,
+            fontFamily: T.font, letterSpacing: 1, cursor: "pointer", transition: "all 0.15s",
             color: isActive ? T.text : T.dim,
-            borderBottom: isActive ? `2px solid ${T.orange}` : "2px solid transparent",
-            marginBottom: -1,
+            borderBottom: isActive ? `1px solid ${T.orange}` : "1px solid transparent",
           }}>{tab}</div>
         );
       })}
@@ -1252,14 +1249,14 @@ export default function App() {
       <TitleBar fetchedAt={fetchedAt} onRefresh={() => loadData(true)} refreshing={refreshing} />
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "0 16px" }}>
-        {/* Page header row — status badges right */}
+        {/* Tab row — tabs left, status badges right (single row, matches Market Risk) */}
         <div style={{
-          display: "flex", alignItems: "center", justifyContent: "flex-end",
-          padding: "10px 0 0",
+          display: "flex", alignItems: "flex-end", justifyContent: "space-between",
+          borderBottom: `1px solid ${T.border}`, padding: "6px 0 0", marginBottom: 12,
         }}>
-          {/* Status badges — right side like Cross-Asset has SPX/10Y/DXY */}
+          <SubTabs tabs={["LIVE SIGNAL", "BACKTEST"]} active={subTab} onChange={setSubTab} />
           {data && (
-            <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 2, paddingBottom: 5 }}>
               <div style={{
                 padding: "3px 10px", fontSize: 10, fontFamily: T.font,
                 background: `${scoreColor}18`, border: `1px solid ${scoreColor}44`,
@@ -1282,9 +1279,6 @@ export default function App() {
             </div>
           )}
         </div>
-
-        {/* Sub-tabs */}
-        <SubTabs tabs={["LIVE SIGNAL", "BACKTEST"]} active={subTab} onChange={setSubTab} />
 
         {/* Content */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>

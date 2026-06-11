@@ -15,23 +15,23 @@ async function fetchData(force = false) {
 // Theme — unified terminal design (matches Cross-Asset Regimes)
 // ═══════════════════════════════════════════════════════════════
 const T = {
-  bg: "#0a0a0c",
-  bgPanel: "#0e0e12",
-  bgCard: "#111116",
-  border: "#1c1c24",
-  borderBright: "#2a2a35",
-  text: "#8a8f9a",
-  dim: "#4a4e58",
+  bg: "#08090c",
+  bgPanel: "#0d0f14",
+  bgCard: "#08090c",
+  border: "#1a1d26",
+  borderBright: "#2a2d36",
+  text: "#c8cad0",
+  dim: "#5a5e6a",
   bright: "#e8eaef",
   white: "#ffffff",
-  cyan: "#00d4ff",
-  orange: "#ff9f43",
-  green: "#00ff88",
-  red: "#ff4757",
-  amber: "#ffbe0b",
+  cyan: "#00bcd4",
+  orange: "#f0b800",
+  green: "#00c853",
+  red: "#ff5252",
+  amber: "#f0b800",
   purple: "#a855f7",
-  greenDim: "rgba(0,255,136,0.15)",
-  amberDim: "rgba(255,190,11,0.12)",
+  greenDim: "rgba(0,200,83,0.15)",
+  amberDim: "rgba(240,184,0,0.12)",
   font: "'JetBrains Mono', 'Fira Code', 'SF Mono', monospace",
 };
 
@@ -161,7 +161,7 @@ function ZoomSlider({ totalCount, zoomStart, zoomEnd, onChange, dates }) {
           style={{
             position: 'absolute', top: 5, height: 4,
             left: `${leftPct}%`, width: `${rightPct - leftPct}%`,
-            background: isZoomed ? T.orange : 'rgba(255,159,67,0.3)',
+            background: isZoomed ? T.orange : 'rgba(240,184,0,0.3)',
             borderRadius: 2, cursor: 'grab',
           }}
           onPointerDown={(e) => handlePointerDown(e, 'track')}
@@ -305,10 +305,10 @@ function TerminalChart({
     <div ref={ref} style={{ position: "relative", width: "100%" }}
       onMouseMove={handleMouse} onMouseLeave={() => setHover(null)}>
       <svg width={W} height={height} style={{ display: "block" }}>
-        {topTicks.map((l, i) => <line key={`tg${i}`} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.035)" />)}
-        {botTicks.map((l, i) => <line key={`bg${i}`} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.035)" />)}
+        {topTicks.map((l, i) => <line key={`tg${i}`} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.03)" />)}
+        {botTicks.map((l, i) => <line key={`bg${i}`} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.03)" />)}
         <line x1={pad.l} x2={W - pad.r} y1={pad.t + topH + pad.mid / 2} y2={pad.t + topH + pad.mid / 2} stroke={T.border} strokeWidth={0.5} />
-        <path d={topPath} fill="none" stroke={topColor} strokeWidth={1} />
+        <path d={topPath} fill="none" stroke={topColor} strokeWidth={1.2} />
         <path d={botPath} fill="none" stroke={bottomColor} strokeWidth={1} />
         {threshY != null && <line x1={pad.l} x2={W - pad.r} y1={threshY} y2={threshY} stroke={T.red} strokeWidth={0.6} strokeDasharray="3,3" opacity={0.5} />}
         {sigPts.map((p, i) => <polygon key={i} points={`${p.x},${p.y - 5} ${p.x - 3.5},${p.y + 1.5} ${p.x + 3.5},${p.y + 1.5}`} fill={T.green} opacity={0.85} />)}
@@ -392,9 +392,9 @@ function CompositeChart({ dates, spx, scores, triggers, height = 420 }) {
       onMouseMove={handleMouse} onMouseLeave={() => setHover(null)}>
       <svg width={W} height={height} style={{ display: "block" }}>
         {spxLbls.map((l, i) => <line key={i} x1={pad.l} x2={W - pad.r} y1={l.y} y2={l.y} stroke="rgba(255,255,255,0.03)" />)}
-        {[3, 6].map((s) => <line key={s} x1={pad.l} x2={W - pad.r} y1={pad.t + H - barH(s)} y2={pad.t + H - barH(s)} stroke="rgba(0,255,136,0.1)" strokeDasharray="2,4" />)}
+        {[3, 6].map((s) => <line key={s} x1={pad.l} x2={W - pad.r} y1={pad.t + H - barH(s)} y2={pad.t + H - barH(s)} stroke="rgba(0,200,83,0.1)" strokeDasharray="2,4" />)}
         {scores.map((s, i) => s > 0 && <rect key={i} x={xS(i) - bw / 2} y={pad.t + H - barH(s)} width={bw} height={barH(s)} fill="rgba(100,45,0,0.85)" />)}
-        <path d={path} fill="none" stroke={T.bright} strokeWidth={1} />
+        <path d={path} fill="none" stroke={T.bright} strokeWidth={1.2} />
         {trigPts.map((p, i) => <polygon key={i} points={`${p.x},${p.y - 5} ${p.x - 3.5},${p.y + 1.5} ${p.x + 3.5},${p.y + 1.5}`} fill={T.green} opacity={0.85} />)}
         {spxLbls.map((l, i) => <text key={i} x={pad.l - 4} y={l.y + 3} fill={T.dim} fontSize={8} textAnchor="end" fontFamily={T.font}>{l.label}</text>)}
         {scLbls.map((l, i) => <text key={i} x={W - pad.r + 4} y={l.y + 3} fill={T.green} fontSize={8} textAnchor="start" fontFamily={T.font} opacity={0.5}>{l.label}</text>)}
@@ -536,14 +536,21 @@ function TitleBar({ fetchedAt, onRefresh, refreshing }) {
       padding: "8px 16px", background: T.bg,
       borderBottom: `1px solid ${T.border}`,
     }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-        <span style={{ fontSize: 16, fontWeight: 700, color: T.orange, fontFamily: T.font, letterSpacing: 2 }}>
-          SMALLFISHMACRO
-        </span>
-        <span style={{ fontSize: 12, fontWeight: 400, color: T.dim, fontFamily: T.font, letterSpacing: 1 }}>
-          TERMINAL
-        </span>
-        <span style={{ fontSize: 10, color: T.dim, fontFamily: T.font }}>v1.0</span>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{
+          width: 22, height: 22, border: `1.5px solid ${T.orange}`, borderRadius: "50%",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 11, color: T.orange, fontWeight: 700, fontFamily: T.font,
+        }}>S</div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+          <span style={{ fontSize: 14, fontWeight: "bold", color: T.orange, fontFamily: T.font, letterSpacing: 3 }}>
+            SMALLFISHMACRO
+          </span>
+          <span style={{ fontSize: 12, fontWeight: "bold", color: T.bright, fontFamily: T.font, letterSpacing: 2 }}>
+            TERMINAL
+          </span>
+          <span style={{ fontSize: 10, color: T.dim, fontFamily: T.font }}>v1.0</span>
+        </div>
       </div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, fontSize: 9, fontFamily: T.font, color: T.dim }}>
         <span>{fetchedAt ? new Date(fetchedAt).toLocaleString() : ""}</span>
@@ -597,8 +604,8 @@ function SubTabs({ tabs, active, onChange }) {
           <div key={tab} onClick={() => onChange(tab)} style={{
             padding: "8px 18px", fontSize: 11, fontWeight: isActive ? 600 : 400,
             fontFamily: T.font, letterSpacing: 0.8, cursor: "pointer",
-            color: isActive ? T.white : T.dim,
-            borderBottom: isActive ? `2px solid ${T.white}` : "2px solid transparent",
+            color: isActive ? T.text : T.dim,
+            borderBottom: isActive ? `2px solid ${T.orange}` : "2px solid transparent",
             marginBottom: -1,
           }}>{tab}</div>
         );
@@ -627,7 +634,7 @@ function InfoBox({ children }) {
     <div style={{
       padding: "6px 10px", margin: "6px 8px", fontSize: 9, lineHeight: 1.6,
       fontFamily: T.font, color: T.text,
-      background: "rgba(255,159,67,0.04)",
+      background: "rgba(240,184,0,0.05)",
       border: `1px solid ${T.orange}33`,
     }}>{children}</div>
   );

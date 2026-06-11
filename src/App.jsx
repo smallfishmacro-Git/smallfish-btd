@@ -565,32 +565,6 @@ function TitleBar({ fetchedAt, onRefresh, refreshing }) {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// NavBar — top-level tab navigation (unified across terminal)
-// ═══════════════════════════════════════════════════════════════
-const NAV_TABS = ["DASHBOARD", "BUY THE DIP", "MARKET RISK", "OVERVIEW", "STRATEGY MAP"];
-
-function NavBar({ active }) {
-  return (
-    <div style={{
-      display: "flex", alignItems: "center", gap: 0,
-      borderBottom: `1px solid ${T.border}`, background: T.bg, padding: "0 16px",
-    }}>
-      {NAV_TABS.map((tab) => {
-        const isActive = tab === active;
-        return (
-          <div key={tab} style={{
-            padding: "8px 16px", fontSize: 11, fontWeight: isActive ? 700 : 400,
-            fontFamily: T.font, color: isActive ? T.orange : T.dim,
-            borderBottom: isActive ? `2px solid ${T.orange}` : "2px solid transparent",
-            cursor: "pointer", letterSpacing: 0.8,
-          }}>{tab}</div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ═══════════════════════════════════════════════════════════════
 // SubTabs — secondary navigation below page title
 // ═══════════════════════════════════════════════════════════════
 function SubTabs({ tabs, active, onChange }) {
@@ -1276,20 +1250,13 @@ export default function App() {
       display: "flex", flexDirection: "column",
     }}>
       <TitleBar fetchedAt={fetchedAt} onRefresh={() => loadData(true)} refreshing={refreshing} />
-      <NavBar active="BUY THE DIP" />
 
       <div style={{ flex: 1, display: "flex", flexDirection: "column", padding: "0 16px" }}>
-        {/* Page header row — title left, status right */}
+        {/* Page header row — status badges right */}
         <div style={{
-          display: "flex", alignItems: "center", justifyContent: "space-between",
+          display: "flex", alignItems: "center", justifyContent: "flex-end",
           padding: "10px 0 0",
         }}>
-          <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-            <span style={{ fontSize: 16, fontWeight: 700, color: T.white, letterSpacing: 1 }}>
-              BUY THE DIP
-            </span>
-          </div>
-
           {/* Status badges — right side like Cross-Asset has SPX/10Y/DXY */}
           {data && (
             <div style={{ display: "flex", alignItems: "center", gap: 2 }}>

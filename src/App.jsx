@@ -1161,7 +1161,7 @@ function LiveSignalView({ data }) {
           </div>
           <InfoBox>
             <span style={{ color: T.orange, fontWeight: 600 }}>How to read this: </span>
-            The composite tracks how many of the 9 indicators are simultaneously active. Green bars show the signal count (0–9). When 3+ indicators fire within a 10-day window, the model triggers a <span style={{ color: T.green }}>▲ BUY</span> signal. Historically, clustered signals precede meaningful S&P 500 bounces.
+            The composite tracks how many of the 9 indicators are simultaneously active. Green bars show the signal count (0–9). When 3+ indicators fire within a 10-day window and the S&P 500 closes at a 2-week low (lowest close of the last 10 sessions), the model triggers a <span style={{ color: T.green }}>▲ BUY</span> signal. Historically, clustered signals precede meaningful S&P 500 bounces.
           </InfoBox>
           <div style={{ background: T.bgPanel }}>
             {compZoomed && (
